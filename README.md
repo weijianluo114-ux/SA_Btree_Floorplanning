@@ -8,7 +8,7 @@
 
 https://github.com/NewmiLeou/Fixed-outline-Floorplan-Design.git
 
-（1）使用方法
+使用方法
 
 **How to compile**
 
@@ -64,8 +64,28 @@ $ ./hw3 ../testcase/n100.hardblocks ../testcase/n100.nets ../ testcase/n100.pl .
 
 https://github.com/romulus0914/fixed-outline_floorplanning
 
+#### Compile
+
+```bash
+make
+```
+
+#### Execute
+
+```bash
+./hw3 <path/to/input_hardblocks> <path/to/input_nets> <path/to/input_pl> <path/to/output_floorplan> <white_space_ratio>
+```
+
+e.g.
+
+```bash
+./hw3 ../testcase/n100.hardblocks ../testcase/n100.nets ../testcase/n100.pl ../output/n100.floorplan 0.1
+```
+
+
+
 ## 2.参考论文
 
-### ①
+#### （1）Modern Floorplanning Based on Fast Simulated Annealing
 
-Modern Floorplanning Based on Fast Simulated Annealing
+#### （2）B*-Trees: A New Representation for Non-Slicing Floorplans
