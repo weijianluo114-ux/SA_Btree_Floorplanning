@@ -171,3 +171,11 @@ git merge test		#合并源分支
 ## 参考链接
 
 [经典算法-B树&amp;B+树&amp;B*树（B Tree&amp;B+ Tree&amp;B Star Tree）_b树是向上合并-CSDN博客](https://blog.csdn.net/li975242487/article/details/90315858)
+
+[B树(B-树) - 来由, 定义, 插入, 构建_哔哩哔哩_bilibili](https://www.bilibili.com/video/BV1tJ4m1w7yR/?spm_id_from=333.337.search-card.all.click&vd_source=d68838d6148730f6468477abb0cb56e6)
+
+[B树 - 维基百科，自由的百科全书](https://zh.wikipedia.org/wiki/B%E6%A0%91)
+
+[B+树 - 维基百科，自由的百科全书](https://zh.wikipedia.org/wiki/B%2B%E6%A0%91)
+
+[B*树 - 维基百科，自由的百科全书](https://zh.wikipedia.org/wiki/B*%E6%A0%91)
