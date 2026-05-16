@@ -8,7 +8,6 @@
 
 [github链接](https://github.com/NewmiLeou/Fixed-outline-Floorplan-Design.git)
 
-
 #### **How to compile**
 
 - In "src/" directory, type the command:
@@ -62,7 +61,6 @@ $ ./hw3 ../testcase/n100.hardblocks ../testcase/n100.nets ../ testcase/n100.pl .
 
 [github链接](https://github.com/romulus0914/fixed-outline_floorplanning)
 
-
 #### Compile
 
 ```bash
@@ -81,10 +79,23 @@ e.g.
 ./hw3 ../testcase/n100.hardblocks ../testcase/n100.nets ../testcase/n100.pl ../output/n100.floorplan 0.1
 ```
 
-
-
 ## 2.参考论文
 
 #### （1）Modern Floorplanning Based on Fast Simulated Annealing
 
 #### （2）B*-Trees: A New Representation for Non-Slicing Floorplans
+
+
+## 3.常用命令
+
+```bash
+git switch -c 分支名字	#创建新分支
+git switch 分支	#切换分支
+
+#假设你想把 test 分支上的工作合并到主分支 main：
+git switch main		#切换到目标分支（你想把代码合并到哪里，就切到哪里）
+git pull origin main	#拉取最新的远程代码（避免冲突，如果是协作项目）
+git merge test		#合并源分支
+```
+
+不过，同步文件的话，vscode巨简单，直接在左边按同步更改的按钮即可
