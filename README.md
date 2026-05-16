@@ -6,11 +6,10 @@
 
 [BTree + 模拟退火算法_b tree floorplan-CSDN博客](https://blog.csdn.net/mr_dec/article/details/124019823)
 
-https://github.com/NewmiLeou/Fixed-outline-Floorplan-Design.git
+[github链接](https://github.com/NewmiLeou/Fixed-outline-Floorplan-Design.git)
 
-使用方法
 
-**How to compile**
+#### **How to compile**
 
 - In "src/" directory, type the command:
 
@@ -26,7 +25,7 @@ It will generate the executable file "hw3" in "bin\" directory.
 $ make clean
 ```
 
-**How to execute**
+#### **How to execute**
 
 - In "src/" directory, enter the following command:
 
@@ -59,10 +58,10 @@ $ ./hw3 ../testcase/n100.hardblocks ../testcase/n100.nets ../ testcase/n100.pl .
 
 --Note: output file will generate in "output\" directory.
 
-
 ### ②
 
-https://github.com/romulus0914/fixed-outline_floorplanning
+[github链接](https://github.com/romulus0914/fixed-outline_floorplanning)
+
 
 #### Compile
 
