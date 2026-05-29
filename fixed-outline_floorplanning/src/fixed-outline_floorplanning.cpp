@@ -9,6 +9,11 @@
 #include <cmath>
 #include <ctime>
 
+// new include
+#include "utils.h"
+#include <chrono> // 如果原来没有
+#include <sstream>
+
 // #define DEBUG 1
 
 using namespace std;
@@ -46,6 +51,10 @@ typedef struct cost
     double R;
     double cost;
 } Cost;
+
+// 新定义的参数和变量--------------------------------------------------------
+
+//------------------------------------------------------------------------
 
 int num_hardblocks, num_terminals; // 定义硬块数量和端点总数
 int num_nets, num_pins;
@@ -196,6 +205,7 @@ void ReadTerminalsFile(string terminals_file)
 
 void BuildInitBtree()
 {
+    ScopedTimer t("BuildInitBtree");
     btree = vector<Node>(num_hardblocks);
 
     queue<int> bfs;
@@ -247,6 +257,9 @@ void BuildInitBtree()
 
 void InitBtree()
 {
+#ifdef DEBUG
+    ScopedTimer t("InitBtree");
+#endif
     btree = vector<Node>(num_hardblocks);
     vector<int> inserted(num_hardblocks, 0);
 
@@ -412,15 +425,29 @@ Cost CalculateCost()
         height_penalty = ((double)height / W);
     c.cost = area_cost + wl_cost + R_cost + width_penalty + height_penalty;
 
+// #ifdef DEBUG
+//     cout << "Width:      " << c.width << '\n';
+//     cout << "Height:     " << c.height << '\n';
+//     cout << "Area:       " << c.area << '\n';
+//     cout << "Wirelength: " << c.wirelength << '\n';
+//     cout << "R:          " << c.R << '\n';
+//     cout << "Cost:       " << area_cost << " + " << wl_cost << " + " << R_cost << " + "
+//          << width_penalty << " + " << height_penalty << " = " << c.cost << '\n';
+//     cout << '\n';
+// #endif
 #ifdef DEBUG
-    cout << "Width:      " << c.width << '\n';
-    cout << "Height:     " << c.height << '\n';
-    cout << "Area:       " << c.area << '\n';
-    cout << "Wirelength: " << c.wirelength << '\n';
-    cout << "R:          " << c.R << '\n';
-    cout << "Cost:       " << area_cost << " + " << wl_cost << " + " << R_cost << " + "
-         << width_penalty << " + " << height_penalty << " = " << c.cost << '\n';
-    cout << '\n';
+    static auto last_update = std::chrono::steady_clock::now();
+    auto now = std::chrono::steady_clock::now();
+    double elapsed = std::chrono::duration<double>(now - last_update).count();
+    if (elapsed >= 1.0)
+    {
+        std::ostringstream oss;
+        oss << "\rCost:" << c.cost << " | Area:" << c.area
+            << " | WL:" << c.wirelength << " | W:" << c.width
+            << " H:" << c.height << " | R:" << c.R << "          ";
+        std::cout << oss.str() << std::flush;
+        last_update = now;
+    }
 #endif
 
     return c;
@@ -649,6 +676,9 @@ void Verify(vector<HardBlock> &hb)
 
 void SimulatedAnnealing()
 {
+#ifdef DEBUG
+    ScopedTimer t("SimulatedAnnealing");
+#endif
     min_cost = CalculateCost();
     min_cost_floorplan = hardblocks;
 
@@ -789,6 +819,10 @@ void SimulatedAnnealing()
 
     if (in_fixed_outline)
     {
+        // 循环结束后（比如在 return 0 前）
+#ifdef DEBUG
+        std::cout << '\n';
+#endif
         cout << "Found feasible solution\n";
         cout << "Width:      " << min_cost_fixed_outline.width << '\n';
         cout << "Height:     " << min_cost_fixed_outline.height << '\n';
@@ -802,6 +836,10 @@ void SimulatedAnnealing()
     }
     else
     {
+        // 循环结束后（比如在 return 0 前）
+#ifdef DEBUG
+        std::cout << '\n';
+#endif
         cout << "Not Found feasible solution\n";
         cout << "Width:      " << min_cost.width << '\n';
         cout << "Height:     " << min_cost.height << '\n';
@@ -886,11 +924,13 @@ int main(int argc, char **argv)
     srand(seed);
     cout << "Random seed: " << seed << "\n\n";
 
-    BuildInitBtree();
-    // InitBtree();
+    // BuildInitBtree();
+    InitBtree();
 
+    // 模拟退火
     SimulatedAnnealing();
 
+    // 输出文件
     if (in_fixed_outline)
         OutputFloorplan(floorplan_file, min_cost_fixed_outline.wirelength, min_cost_floorplan_fixed_outline);
     else

@@ -1,0 +1,41 @@
+# ===== Debug 版本 Makefile =====
+# 使用方法: make -f Makefile.debug
+# 测试命令： gdb --args ./hw3_dbg ../testcase/n100.hardblocks ../testcase/n100.nets ../testcase/n100.pl ../output/n100_01.floorplan 0.1
+
+# 编译器
+GXX := g++
+
+# Debug 专用编译选项
+# -std=c++11   : 使用 C++11 标准
+# -g           : 生成调试信息（供 gdb 等使用）
+# -O0          : 关闭优化（调试时变量不会被优化掉）
+# -Wall        : 开启几乎所有常规警告
+# -Wextra      : 开启额外警告（推荐调试时使用）
+# -DDEBUG      : 定义 DEBUG 宏，可在代码中用 #ifdef DEBUG 控制调试输出
+GXXFLAGS := -std=c++11 -g -Og -Wall -Wextra -DDEBUG
+
+# 源文件列表（多个源文件）
+SRC := fixed-outline_floorplanning.cpp utils.cpp
+
+# 目标文件列表（每个 .cpp 生成一个 .o）
+OBJ := $(SRC:.cpp=.o)
+
+# 可执行文件
+EXE := hw3_dbg
+
+# 默认目标
+.PHONY: all
+all: $(EXE)
+
+# 链接
+$(EXE): $(OBJ)
+	$(GXX) $(GXXFLAGS) -o $@ $^
+
+# 编译规则
+%.o: %.cpp
+	$(GXX) $(GXXFLAGS) -c -o $@ $<
+
+# 清理
+.PHONY: clean
+clean:
+	rm -rf $(OBJ) $(EXE)

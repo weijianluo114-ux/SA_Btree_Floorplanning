@@ -121,7 +121,7 @@ $ ./<exe> <hardblocks file> <nets file> <pl file> <output file> <dead_space_rati
 e.g.:
 
 ```bash
-$ ./hw3 ../testcase/n100.hardblocks ../testcase/n100.nets ../ testcase/n100.pl ../output/n100_01.floorplan 0.1
+$ ./hw3 ../testcase/n100.hardblocks ../testcase/n100.nets ../testcase/n100.pl ../output/n100_01.floorplan 0.1
 ```
 
 --Note: output file will generate in "output\" directory.
