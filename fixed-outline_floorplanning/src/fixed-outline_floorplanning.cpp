@@ -176,7 +176,7 @@ void ReadNetsFile(string nets_file)
     file.close();
 }
 
-void ReadTerminalsFile(string terminals_file)
+void ReadTerminalsFile(string terminals_file) // 读取端口文件
 {
     ifstream file;
     file.open(terminals_file);
@@ -184,10 +184,11 @@ void ReadTerminalsFile(string terminals_file)
     string str;
     int x, y;
 
-    terminals = vector<Terminal>(num_terminals + 1);
+    // 细节加1，以保证命名存储一致性
+    terminals = vector<Terminal>(num_terminals + 1); // 构造一个数组，内部元素为Terminal结构体，大小为num_terminals + 1
     for (int i = 1; i <= num_terminals; i++)
     {
-        file >> str >> x >> y;
+        file >> str >> x >> y; // 得到各个端口的id和xy坐标
         terminals[i].id = i;
         terminals[i].x = x;
         terminals[i].y = y;
