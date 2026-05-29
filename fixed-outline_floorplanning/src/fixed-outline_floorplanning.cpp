@@ -884,13 +884,17 @@ int main(int argc, char **argv)
     ReadNetsFile(nets_file);
     ReadTerminalsFile(terminals_file);
 
-    unsigned int seed = GetRandomSeed();
+    unsigned int seed = GetRandomSeed(); // 块大小或者空白率不同会导致得到的种子不同
     // unsigned int seed = time(NULL);
-    srand(seed);
+
+    /*------------------------------------------*/
+    // warm:AI建议用一个新的随机种子库
+    /*------------------------------------------*/
+    srand(seed); // 初始化伪随机数生成器的种子
     cout << "Random seed: " << seed << "\n\n";
 
-    BuildInitBtree();
-    // InitBtree();
+    BuildInitBtree(); // 随机初始化树
+    // InitBtree(); // 有约束地初始化树
 
     SimulatedAnnealing();
 
