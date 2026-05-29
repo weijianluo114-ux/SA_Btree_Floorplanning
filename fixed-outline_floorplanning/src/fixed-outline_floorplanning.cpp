@@ -9,11 +9,12 @@
 #include <cmath>
 #include <ctime>
 
-//#define DEBUG 1
+// #define DEBUG 1
 
 using namespace std;
 
-typedef struct hardblock {
+typedef struct hardblock
+{
     int id;
     int x;
     int y;
@@ -22,19 +23,22 @@ typedef struct hardblock {
     int rotate;
 } HardBlock;
 
-typedef struct terminal {
+typedef struct terminal
+{
     int id;
     int x;
     int y;
 } Terminal;
 
-typedef struct node {
+typedef struct node
+{
     int parent;
     int left_child;
     int right_child;
 } Node;
 
-typedef struct cost {
+typedef struct cost
+{
     int width;
     int height;
     double area;
@@ -43,14 +47,14 @@ typedef struct cost {
     double cost;
 } Cost;
 
-int num_hardblocks, num_terminals;
+int num_hardblocks, num_terminals; // 定义硬块数量和端点总数
 int num_nets, num_pins;
 vector<HardBlock> hardblocks;
 vector<vector<int>> nets;
 vector<Terminal> terminals;
 
 double white_space_ratio;
-double total_block_area;
+double total_block_area; // 总硬块面积，即所有块加起来的面积和
 // target area = total block area * (1 + white space ratio)
 double area_target;
 // area, wire length normalization = initial area, wirelength
@@ -77,35 +81,37 @@ Cost min_cost_fixed_outline;
 vector<HardBlock> min_cost_floorplan_fixed_outline;
 vector<Node> min_cost_btree_fixed_outline;
 
-void ReadHardblocksFile(string hardblocks_file)
+// 读取硬块文件
+void ReadHardblocksFile(string hardblocks_file) // 接收参数为文件路径
 {
-    ifstream file;
-    file.open(hardblocks_file);
+    ifstream file;              // 创建一个输入文件流对象
+    file.open(hardblocks_file); // 打开传进来的 hardblocks 文件，路径
 
-    string temp1, temp2, str;
-    file >> temp1 >> temp2 >> num_hardblocks;
-    file >> temp1 >> temp2 >> num_terminals;
-    file >> str;
+    string temp1, temp2, str;                 // 创建一些临时的承接变量用于跳过不需要的量
+    file >> temp1 >> temp2 >> num_hardblocks; // 从文件头读取前三项，其中最后一项是 hardblock 的数量
+    file >> temp1 >> temp2 >> num_terminals;  // 读取 terminal 数量
+    file >> str;                              // 读掉下一段内容，通常是表头或换行后的标记，避免后面解析时被干扰
 
-    total_block_area = 0;
-    hardblocks = vector<HardBlock>(num_hardblocks);
-    for (int i = 0; i < num_hardblocks; i++) {
-        getline(file, str);
+    total_block_area = 0;                           // 初始化总硬块面积，用来后面累加
+    hardblocks = vector<HardBlock>(num_hardblocks); // 创建一个大小为 hardblock 数量的数组，准备存每个块的信息
+    for (int i = 0; i < num_hardblocks; i++)        // 开始逐个读取每个 hardblock 的尺寸信息
+    {
+        getline(file, str); // 读取当前这一整行内容到 str，因为这一行通常是类似描述块尺寸的文本格式
 
-        size_t pos1 = str.find("(");
-        pos1 = str.find("(", pos1 + 1);
-        pos1 = str.find("(", pos1 + 1);
+        size_t pos1 = str.find("(");    // 找第一个左括号的位置
+        pos1 = str.find("(", pos1 + 1); // 再找下一个左括号
+        pos1 = str.find("(", pos1 + 1); // 这说明这一行里可能有多个括号嵌套，真正要取的数据在第三个括号之后
         size_t pos2 = str.find(",");
         pos2 = str.find(",", pos2 + 1);
-        pos2 = str.find(",", pos2 + 1);
+        pos2 = str.find(",", pos2 + 1); // 找到第三个逗号，这里是在定位 width 和 height 中间的分隔位置
         size_t pos3 = str.find(")");
         pos3 = str.find(")", pos3 + 1);
-        pos3 = str.find(")", pos3 + 1);
+        pos3 = str.find(")", pos3 + 1); // 找第三个右括号
 
-        char buffer[10];
-        int width, height;
-        size_t len = str.copy(buffer, pos2 - pos1 - 1, pos1 + 1);
-        buffer[len] = '\0';
+        char buffer[10];                                          // 准备一个短缓冲区，暂存切出来的数字字符串
+        int width, height;                                        // 定义当前块的宽和高
+        size_t len = str.copy(buffer, pos2 - pos1 - 1, pos1 + 1); // 从字符串中把宽度部分复制到 buffer 里
+        buffer[len] = '\0';                                       // 手动补字符串结束符，变成 C 风格字符串
         width = atoi(buffer);
         len = str.copy(buffer, pos3 - pos2 - 2, pos2 + 2);
         buffer[len] = '\0';
@@ -120,15 +126,18 @@ void ReadHardblocksFile(string hardblocks_file)
 
         total_block_area += width * height;
     }
+    // store every block's trait, including weight, height, rotate and so on
 
     area_target = total_block_area * (1 + white_space_ratio);
-    W = sqrt(area_target);
+    W = sqrt(area_target); // total floorplanning region width
 
+    // 输出读取结果
     cout << "Area:             " << total_block_area << '\n';
     cout << "Target Area:      " << area_target << '\n';
     cout << "W:                " << W << '\n';
     cout << '\n';
 
+    // 关闭文件
     file.close();
 }
 
@@ -142,17 +151,21 @@ void ReadNetsFile(string nets_file)
     file >> temp1 >> temp2 >> num_pins;
 
     nets = vector<vector<int>>(num_nets);
-    for (int i = 0; i < num_nets; i++) {
+    for (int i = 0; i < num_nets; i++)
+    {
         int degree;
         file >> temp1 >> temp2 >> degree;
-        for (int j = 0; j < degree; j++) {
+        for (int j = 0; j < degree; j++)
+        {
             file >> str;
             int id;
-            if (str[0] == 'p') {
+            if (str[0] == 'p')
+            {
                 str.erase(0, 1);
                 id = atoi(str.c_str()) + num_hardblocks;
             }
-            else if (str[0] == 's') {
+            else if (str[0] == 's')
+            {
                 str.erase(0, 2);
                 id = atoi(str.c_str());
             }
@@ -172,7 +185,8 @@ void ReadTerminalsFile(string terminals_file)
     int x, y;
 
     terminals = vector<Terminal>(num_terminals + 1);
-    for (int i = 1; i <= num_terminals; i++) {
+    for (int i = 1; i <= num_terminals; i++)
+    {
         file >> str >> x >> y;
         terminals[i].id = i;
         terminals[i].x = x;
@@ -195,13 +209,16 @@ void BuildInitBtree()
     inserted[root_block] = 1;
 
     int left = num_hardblocks - 1;
-    while (!bfs.empty()) {
+    while (!bfs.empty())
+    {
         int parent = bfs.front();
         bfs.pop();
 
         int left_child = -1, right_child = -1;
-        if (left > 0) {
-            do {
+        if (left > 0)
+        {
+            do
+            {
                 left_child = rand() % num_hardblocks;
             } while (inserted[left_child]);
             btree[parent].left_child = left_child;
@@ -209,8 +226,10 @@ void BuildInitBtree()
             inserted[left_child] = 1;
             left--;
 
-            if (left > 0) {
-                do {
+            if (left > 0)
+            {
+                do
+                {
                     right_child = rand() % num_hardblocks;
                 } while (inserted[right_child]);
                 btree[parent].right_child = right_child;
@@ -242,22 +261,26 @@ void InitBtree()
     int width = hardblocks[root_block].width;
     int inserted_cnt = 1;
 
-    while (inserted_cnt != num_hardblocks) {
+    while (inserted_cnt != num_hardblocks)
+    {
         int node;
-        do {
+        do
+        {
             node = rand() % num_hardblocks;
         } while (inserted[node]);
 
         btree[node].left_child = -1;
         btree[node].right_child = -1;
-        if (width > W) {
+        if (width > W)
+        {
             btree[node].parent = row_node;
             btree[row_node].right_child = node;
             row_node = node;
             col_node = node;
             width = hardblocks[node].width;
         }
-        else {
+        else
+        {
             btree[node].parent = col_node;
             btree[col_node].left_child = node;
             col_node = node;
@@ -273,9 +296,9 @@ void BtreePreorderTraverse(int cur_node, bool left)
 {
     int parent = btree[cur_node].parent;
     // left or right child of parent
-    if (left) 
+    if (left)
         hardblocks[cur_node].x = hardblocks[parent].x + hardblocks[parent].width;
-    else 
+    else
         hardblocks[cur_node].x = hardblocks[parent].x;
 
     int x_start = hardblocks[cur_node].x;
@@ -316,7 +339,8 @@ Cost CalculateCost()
     BtreeToFloorplan();
 
     int width = 0, height = 0;
-    for (int i = 0; i < num_hardblocks; i++) {
+    for (int i = 0; i < num_hardblocks; i++)
+    {
         if (hardblocks[i].x + hardblocks[i].width > width)
             width = hardblocks[i].x + hardblocks[i].width;
         if (hardblocks[i].y + hardblocks[i].height > height)
@@ -330,11 +354,14 @@ Cost CalculateCost()
 
     // half perimeter wire length
     double wirelength = 0;
-    for (const vector<int> &net : nets) {
+    for (const vector<int> &net : nets)
+    {
         int x_min = width + 1, x_max = 0;
         int y_min = height + 1, y_max = 0;
-        for (const int pin : net) {
-            if (pin < num_hardblocks) {
+        for (const int pin : net)
+        {
+            if (pin < num_hardblocks)
+            {
                 int x_center = hardblocks[pin].x + hardblocks[pin].width / 2;
                 int y_center = hardblocks[pin].y + hardblocks[pin].height / 2;
                 if (x_center < x_min)
@@ -346,7 +373,8 @@ Cost CalculateCost()
                 if (y_center > y_max)
                     y_max = y_center;
             }
-            else {
+            else
+            {
                 const Terminal &t = terminals[pin - num_hardblocks];
                 if (t.x < x_min)
                     x_min = t.x;
@@ -393,7 +421,7 @@ Cost CalculateCost()
     cout << "Wirelength: " << c.wirelength << '\n';
     cout << "R:          " << c.R << '\n';
     cout << "Cost:       " << area_cost << " + " << wl_cost << " + " << R_cost << " + "
-                           << width_penalty << " + " << height_penalty  << " = " << c.cost << '\n';
+         << width_penalty << " + " << height_penalty << " = " << c.cost << '\n';
     cout << '\n';
 #endif
 
@@ -412,24 +440,28 @@ void Swap(int node1, int node2)
 {
     // swap parent
     int node1_parent = btree[node1].parent;
-    if (node1_parent != -1) {
+    if (node1_parent != -1)
+    {
         if (btree[node1_parent].left_child == node1)
             btree[node1_parent].left_child = node2;
         else if (btree[node1_parent].right_child == node1)
             btree[node1_parent].right_child = node2;
-        else {
+        else
+        {
             cout << "[Error] node not parent's child\n";
             exit(1);
         }
     }
 
     int node2_parent = btree[node2].parent;
-    if (node2_parent != -1) {
+    if (node2_parent != -1)
+    {
         if (btree[node2_parent].left_child == node2)
             btree[node2_parent].left_child = node1;
         else if (btree[node2_parent].right_child == node2)
             btree[node2_parent].right_child = node1;
-        else {
+        else
+        {
             cout << "[Error] node not parent's child\n";
             exit(1);
         }
@@ -480,21 +512,25 @@ void Swap(int node1, int node2)
 void Move(int node, int to_node)
 {
     // delete
-    if (btree[node].left_child == -1 && btree[node].right_child == -1) {
+    if (btree[node].left_child == -1 && btree[node].right_child == -1)
+    {
         // no children
         int parent = btree[node].parent;
         if (btree[parent].left_child == node)
             btree[parent].left_child = -1;
         else if (btree[parent].right_child == node)
             btree[parent].right_child = -1;
-        else {
+        else
+        {
             cout << "[Error] node not parent's child\n";
             exit(1);
         }
     }
-    else if (btree[node].left_child != -1 && btree[node].right_child != -1) {
+    else if (btree[node].left_child != -1 && btree[node].right_child != -1)
+    {
         // two children
-        do {
+        do
+        {
             bool move_left;
             if (btree[node].left_child != -1 && btree[node].right_child != -1)
                 move_left = rand() % 2 == 0;
@@ -502,7 +538,7 @@ void Move(int node, int to_node)
                 move_left = true;
             else
                 move_left = false;
-            
+
             if (move_left)
                 Swap(node, btree[node].left_child);
             else
@@ -514,12 +550,14 @@ void Move(int node, int to_node)
             btree[parent].left_child = -1;
         else if (btree[parent].right_child == node)
             btree[parent].right_child = -1;
-        else {
+        else
+        {
             cout << "[Error] node not parent's child\n";
             exit(1);
         }
     }
-    else {
+    else
+    {
         // one child
         int child;
         if (btree[node].left_child != -1)
@@ -528,12 +566,14 @@ void Move(int node, int to_node)
             child = btree[node].right_child;
 
         int parent = btree[node].parent;
-        if (parent != -1) {
+        if (parent != -1)
+        {
             if (btree[parent].left_child == node)
                 btree[parent].left_child = child;
             else if (btree[parent].right_child == node)
                 btree[parent].right_child = child;
-            else {
+            else
+            {
                 cout << "[Error] [one child] node not parent's child\n";
                 exit(1);
             }
@@ -549,25 +589,29 @@ void Move(int node, int to_node)
     // insert
     int random_left_right = rand() % 4;
     int child;
-    if (random_left_right == 0) {
+    if (random_left_right == 0)
+    {
         child = btree[to_node].left_child;
         btree[node].left_child = child;
         btree[node].right_child = -1;
         btree[to_node].left_child = node;
     }
-    else if (random_left_right == 0) {
+    else if (random_left_right == 0)
+    {
         child = btree[to_node].right_child;
         btree[node].left_child = child;
         btree[node].right_child = -1;
         btree[to_node].right_child = node;
     }
-    else if (random_left_right == 0) {
+    else if (random_left_right == 0)
+    {
         child = btree[to_node].left_child;
         btree[node].left_child = -1;
         btree[node].right_child = child;
         btree[to_node].left_child = node;
     }
-    else {
+    else
+    {
         child = btree[to_node].right_child;
         btree[node].left_child = -1;
         btree[node].right_child = child;
@@ -580,12 +624,14 @@ void Move(int node, int to_node)
 
 void Verify(vector<HardBlock> &hb)
 {
-    for (int i = 0; i < num_hardblocks; i++) {
+    for (int i = 0; i < num_hardblocks; i++)
+    {
         int x_bl1 = hb[i].x;
         int y_bl1 = hb[i].y;
         int x_tr1 = x_bl1 + hb[i].width;
         int y_tr1 = y_bl1 + hb[i].height;
-        for (int j = 0; j < num_hardblocks; j++) {
+        for (int j = 0; j < num_hardblocks; j++)
+        {
             if (i == j)
                 continue;
 
@@ -594,7 +640,8 @@ void Verify(vector<HardBlock> &hb)
             int x_tr2 = x_bl2 + hb[j].width;
             int y_tr2 = y_bl2 + hb[j].height;
 
-            if (!(x_tr1 <= x_bl2 || x_bl1 >= x_tr2 || y_tr1 <= y_bl2 || y_bl1 >= y_tr2)) {
+            if (!(x_tr1 <= x_bl2 || x_bl1 >= x_tr2 || y_tr1 <= y_bl2 || y_bl1 >= y_tr2))
+            {
                 printf("[Error] hardblocks overlapped\n");
                 exit(1);
             }
@@ -609,7 +656,7 @@ void SimulatedAnnealing()
 
     const double P = 0.95;
     const double r = 0.9;
-    //const double epsilon = 0.001; // coolest temperature
+    // const double epsilon = 0.001; // coolest temperature
     const int k = 20;
     const int N = k * num_hardblocks;
     const double T0 = -min_cost.cost * num_hardblocks / log(P);
@@ -627,41 +674,49 @@ void SimulatedAnnealing()
     const int TIME_LIMIT = 1200 - 5; // 20 minutes
     int seconds = 0, runtime = 0;
 
-    do {
+    do
+    {
         MT = 0;
         uphill = 0;
         reject = 0;
 
-        do {
+        do
+        {
             vector<HardBlock> hardblocks_temp(hardblocks);
             vector<Node> btree_temp(btree);
             int prev_root_block = root_block;
 
             int M = rand() % 3;
-            if (M == 0) {
+            if (M == 0)
+            {
                 // rotate
                 int node = rand() % num_hardblocks;
                 Rotate(node);
             }
-            else if (M == 1) {
+            else if (M == 1)
+            {
                 // swap
                 int node1, node2;
                 node1 = rand() % num_hardblocks;
-                do {
+                do
+                {
                     node2 = rand() % num_hardblocks;
                 } while (node2 == node1);
                 Swap(node1, node2);
             }
-            else if (M == 2) {
+            else if (M == 2)
+            {
                 // move
                 int node, to_node;
                 node = rand() % num_hardblocks;
-                do {
+                do
+                {
                     to_node = rand() % num_hardblocks;
                 } while (to_node == node || btree[node].parent == to_node);
                 Move(node, to_node);
             }
-            else {
+            else
+            {
                 cout << "[Error] Unspecified Move\n";
                 exit(1);
             }
@@ -670,21 +725,26 @@ void SimulatedAnnealing()
             Cost cur_cost = CalculateCost();
             double delta_cost = cur_cost.cost - prev_cost.cost;
             double random = ((double)rand()) / RAND_MAX;
-            if (delta_cost <= 0 || random < exp(-delta_cost / T)) {
+            if (delta_cost <= 0 || random < exp(-delta_cost / T))
+            {
                 if (delta_cost > 0)
                     uphill++;
 
                 // feasible solution with minimum cost
-                if (cur_cost.width <= W && cur_cost.height <= W) {
-                    if (in_fixed_outline) {
-                        if (cur_cost.cost < min_cost_fixed_outline.cost) {
+                if (cur_cost.width <= W && cur_cost.height <= W)
+                {
+                    if (in_fixed_outline)
+                    {
+                        if (cur_cost.cost < min_cost_fixed_outline.cost)
+                        {
                             min_cost_root_block_fixed_outline = root_block;
                             min_cost_fixed_outline = cur_cost;
                             min_cost_floorplan_fixed_outline = hardblocks;
                             min_cost_btree_fixed_outline = btree;
                         }
                     }
-                    else {
+                    else
+                    {
                         in_fixed_outline = true;
                         min_cost_root_block_fixed_outline = root_block;
                         min_cost_fixed_outline = cur_cost;
@@ -694,7 +754,8 @@ void SimulatedAnnealing()
                 }
 
                 // infeasible solution with minimum cost
-                if (cur_cost.cost < min_cost.cost) {
+                if (cur_cost.cost < min_cost.cost)
+                {
                     min_cost_root_block = root_block;
                     min_cost = cur_cost;
                     min_cost_floorplan = hardblocks;
@@ -703,7 +764,8 @@ void SimulatedAnnealing()
 
                 prev_cost = cur_cost;
             }
-            else {
+            else
+            {
                 reject++;
                 root_block = prev_root_block;
                 if (M == 0)
@@ -717,16 +779,18 @@ void SimulatedAnnealing()
 
         seconds = (clock() - time) / CLOCKS_PER_SEC;
         runtime = (clock() - init_time) / CLOCKS_PER_SEC;
-        if (seconds >= max_seconds && in_fixed_outline == false) {
+        if (seconds >= max_seconds && in_fixed_outline == false)
+        {
             cout << "Overtime " << min_cost.width << " " << min_cost.height << '\n';
             seconds = 0;
             time = clock();
             T = T0;
         }
-    //} while ((float)reject / MT <= 0.95 && T >= epsilon);
+        //} while ((float)reject / MT <= 0.95 && T >= epsilon);
     } while (seconds < max_seconds && runtime < TIME_LIMIT);
 
-    if (in_fixed_outline) {
+    if (in_fixed_outline)
+    {
         cout << "Found feasible solution\n";
         cout << "Width:      " << min_cost_fixed_outline.width << '\n';
         cout << "Height:     " << min_cost_fixed_outline.height << '\n';
@@ -738,7 +802,8 @@ void SimulatedAnnealing()
 
         Verify(min_cost_floorplan_fixed_outline);
     }
-    else {
+    else
+    {
         cout << "Not Found feasible solution\n";
         cout << "Width:      " << min_cost.width << '\n';
         cout << "Height:     " << min_cost.height << '\n';
@@ -760,7 +825,8 @@ void OutputFloorplan(string output_file, int wirelength, vector<HardBlock> &hb)
     file << "Wirelength " << wirelength << '\n';
     file << "Blocks\n";
 
-    for (int i = 0; i < num_hardblocks; i++) {
+    for (int i = 0; i < num_hardblocks; i++)
+    {
         if (hb[i].rotate)
             file << "sb" << i << " " << hb[i].x << " " << hb[i].y << " " << hb[i].height << " " << hb[i].width << " 1\n";
         else
@@ -772,19 +838,22 @@ void OutputFloorplan(string output_file, int wirelength, vector<HardBlock> &hb)
 
 unsigned int GetRandomSeed()
 {
-    if (num_hardblocks == 100) {
+    if (num_hardblocks == 100)
+    {
         if (white_space_ratio == 0.1)
             return 1542894266;
         else if (white_space_ratio == 0.15)
             return 1542894588;
     }
-    else if (num_hardblocks == 200) {
+    else if (num_hardblocks == 200)
+    {
         if (white_space_ratio == 0.1)
             return 1542892927;
         else if (white_space_ratio == 0.15)
             return 1542892927;
     }
-    else if (num_hardblocks == 300) {
+    else if (num_hardblocks == 300)
+    {
         if (white_space_ratio == 0.1)
             return 1542959801;
         else if (white_space_ratio == 0.15)
@@ -796,28 +865,31 @@ unsigned int GetRandomSeed()
 
 int main(int argc, char **argv)
 {
-    if (argc < 6) {
+    // 首先判断命令行参数是否足够
+    if (argc < 6)
+    {
         cout << "[Usage]\n";
         cout << "    ./hw3 <.hardblocks> <.nets> <.pl> <.floorplan> <white_space_ratio>\n";
         exit(1);
     }
+    // 将不同文件的路径存储下来
     string hardblocks_file = argv[1];
     string nets_file = argv[2];
     string terminals_file = argv[3];
     string floorplan_file = argv[4];
-    white_space_ratio = atof(argv[5]);
+    white_space_ratio = atof(argv[5]); // 将 C 风格字符串转换为双精度浮点数
 
     ReadHardblocksFile(hardblocks_file);
     ReadNetsFile(nets_file);
     ReadTerminalsFile(terminals_file);
 
     unsigned int seed = GetRandomSeed();
-    //unsigned int seed = time(NULL);
+    // unsigned int seed = time(NULL);
     srand(seed);
     cout << "Random seed: " << seed << "\n\n";
 
     BuildInitBtree();
-    //InitBtree();
+    // InitBtree();
 
     SimulatedAnnealing();
 
