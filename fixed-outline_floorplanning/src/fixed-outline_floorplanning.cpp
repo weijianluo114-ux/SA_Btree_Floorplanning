@@ -150,26 +150,26 @@ void ReadNetsFile(string nets_file)
     file >> temp1 >> temp2 >> num_nets;
     file >> temp1 >> temp2 >> num_pins;
 
-    nets = vector<vector<int>>(num_nets);
+    nets = vector<vector<int>>(num_nets); // 外层是一个num_nets大小的数组，每一个数组中有一个空的int数组
     for (int i = 0; i < num_nets; i++)
     {
-        int degree;
+        int degree; // 定义某一个节点的引脚数
         file >> temp1 >> temp2 >> degree;
         for (int j = 0; j < degree; j++)
         {
             file >> str;
             int id;
-            if (str[0] == 'p')
+            if (str[0] == 'p') // p开头说明是一个teminal
             {
-                str.erase(0, 1);
-                id = atoi(str.c_str()) + num_hardblocks;
+                str.erase(0, 1);                         // 删除从“0”开始的“1”个字符
+                id = atoi(str.c_str()) + num_hardblocks; // 这里端口的id是跟在硬块后面的
             }
-            else if (str[0] == 's')
+            else if (str[0] == 's') // s开头则是一个块
             {
-                str.erase(0, 2);
-                id = atoi(str.c_str());
+                str.erase(0, 2);        // 删除sb
+                id = atoi(str.c_str()); // 直接保存即可
             }
-            nets[i].emplace_back(id);
+            nets[i].emplace_back(id); // 类似于push_back，在末尾添加一个id
         }
     }
 
