@@ -35,6 +35,7 @@ typedef struct terminal
     int y;
 } Terminal;
 
+// B树的结构体
 typedef struct node
 {
     int parent;
@@ -203,59 +204,65 @@ void ReadTerminalsFile(string terminals_file)
     file.close();
 }
 
-void BuildInitBtree()
+void BuildInitBtree() // 更随机，更像纯拓扑初始化。
 {
+#ifdef DEBUG
     ScopedTimer t("BuildInitBtree");
-    btree = vector<Node>(num_hardblocks);
+#endif
+    btree = vector<Node>(num_hardblocks); // 先开一个大小等于硬块数的节点数组，每个硬块先对应一个 Node 位置，后面会往里面填父子关系
 
-    queue<int> bfs;
-    vector<int> inserted(num_hardblocks, 0);
+    queue<int> bfs;                          // 定义一个队列，用来按层遍历树。这里的思路是后面从根开始，一层一层往下随机挂孩子
+    vector<int> inserted(num_hardblocks, 0); // 定义一个标记数组，记录每个硬块有没有已经放进树里。0 表示没放，1 表示已经放过
 
-    root_block = rand() % num_hardblocks;
-    btree[root_block].parent = -1;
-    bfs.push(root_block);
-    inserted[root_block] = 1;
+    root_block = rand() % num_hardblocks; // 随机选一个硬块作为根节点。rand() % num_hardblocks 的结果范围是 0 到 num_hardblocks - 1
+    btree[root_block].parent = -1;        // 根节点没有父亲，所以父节点设为 -1，这是个常见的“无效下标”标记
+    bfs.push(root_block);                 // 把根节点放进队列，准备后面从它开始向下扩展
+    inserted[root_block] = 1;             // 标记这个根节点已经被使用，避免后面又被随机选中重复插入
 
-    int left = num_hardblocks - 1;
-    while (!bfs.empty())
+    int left = num_hardblocks - 1; // 除了根节点之外，还剩下多少个硬块没有放进树里。因为根已经用了一个，所以初值是总数减 1
+    while (!bfs.empty())           // 只要队列里还有节点，就继续处理。队列里的节点就是当前已经放入树中的父节点，后面要给它们分配孩子。
     {
-        int parent = bfs.front();
-        bfs.pop();
+        int parent = bfs.front(); // 返回队首的引用     取出队首节点作为当前父节点，但还没有从队列删除它
+        bfs.pop();                // 把刚才取出的父节点从队列中移除，表示它已经开始处理了
 
-        int left_child = -1, right_child = -1;
-        if (left > 0)
+        int left_child = -1, right_child = -1; // 先把左右孩子都初始化成无效值，表示这个父节点一开始还没有孩子
+        if (left > 0)                          // 如果还有没放进树里的硬块，就给当前父节点分配孩子
         {
             do
             {
                 left_child = rand() % num_hardblocks;
-            } while (inserted[left_child]);
-            btree[parent].left_child = left_child;
-            bfs.push(left_child);
-            inserted[left_child] = 1;
-            left--;
+            } while (inserted[left_child]); // 一直随机，直到找到一个没被插入过的节点
 
+            btree[parent].left_child = left_child; // 把刚找到的节点挂到当前父节点的左边。
+            bfs.push(left_child);                  // 把这个左孩子也放进队列，方便后面继续给它分配孩子
+            inserted[left_child] = 1;              // 标记这个节点已经用过，防止后面再次随机选到它
+            left--;                                // 剩余未插入的节点数减 1
+            // 这一段是在判断是否还能再分配一个右孩子。如果还有剩余节点，就同样随机找一个没用过的节点作为右孩子，并挂到当前父节点右边
             if (left > 0)
             {
                 do
                 {
                     right_child = rand() % num_hardblocks;
                 } while (inserted[right_child]);
-                btree[parent].right_child = right_child;
-                bfs.push(right_child);
+
+                btree[parent].right_child = right_child; // 把随机得到的节点挂到右边
+                bfs.push(right_child);                   // 把右孩子也放入队列，等待后续扩展
                 inserted[right_child] = 1;
                 left--;
             }
         }
+
+        // 其实前面已经赋值过一次了，所以这里是重复赋值，功能上没有新增作用。
         btree[parent].left_child = left_child;
         btree[parent].right_child = right_child;
         if (left_child != -1)
-            btree[left_child].parent = parent;
+            btree[left_child].parent = parent; // 如果左孩子确实存在，就设置它的父节点
         if (right_child != -1)
-            btree[right_child].parent = parent;
+            btree[right_child].parent = parent; // 把左孩子的父指针指回当前父节点
     }
 }
 
-void InitBtree()
+void InitBtree() // 更有约束，试图让初始树对应的 floorplan 更容易落进固定 outline。
 {
 #ifdef DEBUG
     ScopedTimer t("InitBtree");
@@ -303,53 +310,63 @@ void InitBtree()
     }
 }
 
+// 这个函数是在“递归给树上的每个块算坐标”。它的核心是：知道父块的位置后，按照 B*-tree 的规则，把当前块放到父块右边或上方，并更新轮廓线
 void BtreePreorderTraverse(int cur_node, bool left)
 {
-    int parent = btree[cur_node].parent;
+    int parent = btree[cur_node].parent; // 取出当前节点的父节点编号，后面计算当前块坐标要用到父块的位置和尺寸
     // left or right child of parent
-    if (left)
+    if (left) // 这一段在算当前块的 x 坐标。如果它是左孩子，就放到父块右边，即横坐标加宽度
         hardblocks[cur_node].x = hardblocks[parent].x + hardblocks[parent].width;
     else
-        hardblocks[cur_node].x = hardblocks[parent].x;
+        hardblocks[cur_node].x = hardblocks[parent].x; // 如果它是右孩子，就和父块左边对齐，即横坐标相同
 
-    int x_start = hardblocks[cur_node].x;
-    int x_end = x_start + hardblocks[cur_node].width;
-    int y_max = 0;
+    int x_start = hardblocks[cur_node].x;             // 记录当前块左边界的 x 坐标，作为后面扫描轮廓线的起点
+    int x_end = x_start + hardblocks[cur_node].width; // 计算当前块右边界的 x 坐标，也就是它占用的水平区间终点
+    int y_max = 0;                                    // 初始化当前块应该放置的最低高度候选值，先从 0 开始
+    // 这个循环在扫描当前块覆盖的水平区间 [[x_start, x_end)。
+    // contour[i] 表示这个 x 位置已经被前面放置的块抬到的最高高度。
+    // 这里找出这段区间里的最大轮廓高度，也就是当前块能贴着放下去的最低 y 位置。
     for (int i = x_start; i < x_end; i++)
         if (contour[i] > y_max)
             y_max = contour[i];
 
-    hardblocks[cur_node].y = y_max;
+    hardblocks[cur_node].y = y_max; // 把当前块的 y 坐标设为刚刚找到的最大轮廓高度，也就是它实际放置的位置。
 
-    y_max += hardblocks[cur_node].height;
+    y_max += hardblocks[cur_node].height; // 当前块已经放上去了，所以把轮廓线抬高到当前块顶端。
     for (int i = x_start; i < x_end; i++)
-        contour[i] = y_max;
+        contour[i] = y_max; // 当前块已经放上去了，所以把轮廓线抬高到当前块顶端
 
     if (btree[cur_node].left_child != -1)
-        BtreePreorderTraverse(btree[cur_node].left_child, true);
+        BtreePreorderTraverse(btree[cur_node].left_child, true); // 如果当前节点还有左孩子，就递归处理左孩子，并传入 true。这表示左孩子要按“放到父块右边”的规则来算坐标。
     if (btree[cur_node].right_child != -1)
         BtreePreorderTraverse(btree[cur_node].right_child, false);
 }
 
+// 把当前的 B*-tree 重新“解码”成具体的版图坐标，也就是把树结构转换成每个硬块的 x、y 位置
 void BtreeToFloorplan()
 {
-    contour = vector<int>(W * 5, 0);
+    contour = vector<int>(W * 5, 0); // 初始化轮廓线数组。contour[i] 表示 x 位置 i 当前已经被占到的最高 y 值。这里开 W * 5 是给足够大的水平空间，避免越界。
+    // 根节点在最左下角
     hardblocks[root_block].x = 0;
     hardblocks[root_block].y = 0;
     for (int i = 0; i < hardblocks[root_block].width; i++)
-        contour[i] = hardblocks[root_block].height;
+        contour[i] = hardblocks[root_block].height; // 把根块覆盖的水平范围标记起来。也就是说，根块占据了 [[0, width) 这段 x 区间，高度已经被抬到根块的顶端
 
     if (btree[root_block].left_child != -1)
-        BtreePreorderTraverse(btree[root_block].left_child, true);
+        BtreePreorderTraverse(btree[root_block].left_child, true); // 如果根有左孩子，就从左孩子开始递归遍历。第二个参数 true 表示这个节点是父节点的左孩子
     if (btree[root_block].right_child != -1)
-        BtreePreorderTraverse(btree[root_block].right_child, false);
+        BtreePreorderTraverse(btree[root_block].right_child, false); // 如果根有右孩子，也递归遍历。第二个参数 false 表示这个节点是父节点的右孩子
 }
 
 Cost CalculateCost()
 {
-    BtreeToFloorplan();
+    BtreeToFloorplan(); // 先把当前的 B*-tree 转成具体坐标。也就是说，先让每个硬块都有自己的 x、y 位置，后面才能统计整张图的尺寸。
 
-    int width = 0, height = 0;
+    int width = 0, height = 0; // 初始化当前版图的外包矩形宽和高，先都设为 0，后面再遍历所有块去更新。
+    // 这个循环在遍历所有硬块，找版图的最右边界和最上边界。
+    // 如果某个块的右边界更大，就更新 width。
+    // 如果某个块的上边界更大，就更新 height。
+    // 最终得到的是整个 floorplan 的包围矩形尺寸。
     for (int i = 0; i < num_hardblocks; i++)
     {
         if (hardblocks[i].x + hardblocks[i].width > width)
@@ -359,13 +376,13 @@ Cost CalculateCost()
     }
 
     // area of current floorplan
-    double floorplan_area = width * height;
+    double floorplan_area = width * height; // 计算当前 floorplan 的面积。这里用的是外包矩形面积，不是所有块真实面积之和。
     // aspect ratio of current floorplan
-    double R = (double)height / width;
+    double R = (double)height / width; // 计算当前版图的长宽比，也就是高度除以宽度。
 
-    // half perimeter wire length
-    double wirelength = 0;
-    for (const vector<int> &net : nets)
+    // half perimeter wire length   半周长线长
+    double wirelength = 0;              // 初始化半周长线长的累加值。后面会遍历每一条 net，把每条 net 的 HPWL 加到这里。
+    for (const vector<int> &net : nets) // 逐条遍历所有 net。net 是当前这条网表里连接的所有 pin 编号。
     {
         int x_min = width + 1, x_max = 0;
         int y_min = height + 1, y_max = 0;
@@ -677,10 +694,10 @@ void Verify(vector<HardBlock> &hb)
 void SimulatedAnnealing()
 {
 #ifdef DEBUG
-    ScopedTimer t("SimulatedAnnealing");
+    ScopedTimer t("SimulatedAnnealing"); // 记录函数执行时间
 #endif
-    min_cost = CalculateCost();
-    min_cost_floorplan = hardblocks;
+    min_cost = CalculateCost();      // 先调用 CalculateCost 计算当前树对应的版图代价、宽高、面积、线长等，并把结果存进min_cost
+    min_cost_floorplan = hardblocks; // 把当前这一版硬块布局复制到 min_cost_floorplan 里。hardblocks 里存的是每个块当前的坐标、宽高、旋转状态，所以这一步相当于把当前解的具体布局快照保存下来
 
     const double P = 0.95;
     const double r = 0.9;
@@ -924,8 +941,8 @@ int main(int argc, char **argv)
     srand(seed);
     cout << "Random seed: " << seed << "\n\n";
 
-    // BuildInitBtree();
-    InitBtree();
+    BuildInitBtree(); // 随机化建立树
+    // InitBtree();
 
     // 模拟退火
     SimulatedAnnealing();
