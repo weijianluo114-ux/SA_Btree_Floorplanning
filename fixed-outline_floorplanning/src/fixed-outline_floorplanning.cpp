@@ -151,13 +151,15 @@ void ReadHardblocksFile(string hardblocks_file) // 接收参数为文件路径
 
 void ReadNetsFile(string nets_file)
 {
-    ifstream file;
-    file.open(nets_file);
+    ifstream file;        // 定义类
+    file.open(nets_file); // 打开网表文件
 
+    // 读取NumNets和NumPins
     string temp1, temp2, str;
     file >> temp1 >> temp2 >> num_nets;
     file >> temp1 >> temp2 >> num_pins;
 
+    // 建立一个大小为num_nets的数组，里面存放的是每一个网表中pin和block的id
     nets = vector<vector<int>>(num_nets);
     for (int i = 0; i < num_nets; i++)
     {
@@ -170,7 +172,7 @@ void ReadNetsFile(string nets_file)
             if (str[0] == 'p')
             {
                 str.erase(0, 1);
-                id = atoi(str.c_str()) + num_hardblocks;
+                id = atoi(str.c_str()) + num_hardblocks; // 注意，这里pin的id要加上块的数量，以免搞混
             }
             else if (str[0] == 's')
             {
