@@ -489,21 +489,21 @@ void Rotate(int node) // 简单的交换宽高操作
 void Swap(int node1, int node2)
 {
     // swap parent
-    int node1_parent = btree[node1].parent;
-    if (node1_parent != -1)
+    int node1_parent = btree[node1].parent; // 取出 node1 的父节点编号
+    if (node1_parent != -1)                 // 如果 node1 不是根节点，就继续。因为根节点没有父节点，父编号是 -1
     {
-        if (btree[node1_parent].left_child == node1)
-            btree[node1_parent].left_child = node2;
+        if (btree[node1_parent].left_child == node1) // 判断 node1 是不是它父节点的左孩子
+            btree[node1_parent].left_child = node2;  // 如果是左孩子，就把父节点的左孩子改成 node2。
         else if (btree[node1_parent].right_child == node1)
-            btree[node1_parent].right_child = node2;
-        else
+            btree[node1_parent].right_child = node2; // 如果是右孩子，就把父节点的右孩子改成 node2。
+        else                                         // 如果既不是左孩子也不是右孩子，就说明树结构已经不一致了。
         {
             cout << "[Error] node not parent's child\n";
             exit(1);
         }
     }
 
-    int node2_parent = btree[node2].parent;
+    int node2_parent = btree[node2].parent; // 取出 node2 的父节点编号，以下做同样的事情
     if (node2_parent != -1)
     {
         if (btree[node2_parent].left_child == node2)
@@ -517,19 +517,21 @@ void Swap(int node1, int node2)
         }
     }
 
+    // 交换2个节点的父母
     btree[node1].parent = node2_parent;
     btree[node2].parent = node1_parent;
 
     // swap children
-    int node1_left_child = btree[node1].left_child;
-    int node1_right_child = btree[node1].right_child;
-    btree[node1].left_child = btree[node2].left_child;
-    btree[node1].right_child = btree[node2].right_child;
-    btree[node2].left_child = node1_left_child;
-    btree[node2].right_child = node1_right_child;
+    int node1_left_child = btree[node1].left_child;      // 先把 node1 的左孩子保存到临时变量里，避免后面覆盖掉
+    int node1_right_child = btree[node1].right_child;    // 再把 node1 的右孩子保存起来
+    btree[node1].left_child = btree[node2].left_child;   // 把 node2 的左孩子接到 node1 身上，也就是 node1 现在继承 node2 的左子树
+    btree[node1].right_child = btree[node2].right_child; // 把 node2 的右孩子接到 node1 身上，也就是 node1 继承 node2 的右子树
+    btree[node2].left_child = node1_left_child;          // 把原来 node1 的左孩子接到 node2 身上。
+    btree[node2].right_child = node1_right_child;        // 把原来 node1 的右孩子接到 node2 身上
 
-    if (btree[node1].left_child != -1)
-        btree[btree[node1].left_child].parent = node1;
+    // 以下是把被交换的节点的孩子的父母重新设置
+    if (btree[node1].left_child != -1)                 // 如果 node1 还有左孩子，就继续处理
+        btree[btree[node1].left_child].parent = node1; // 把 node1 的左孩子的父节点设成 node1。这样左孩子就知道自己现在挂在 node1 下面了。
     if (btree[node1].right_child != -1)
         btree[btree[node1].right_child].parent = node1;
     if (btree[node2].left_child != -1)
@@ -537,14 +539,15 @@ void Swap(int node1, int node2)
     if (btree[node2].right_child != -1)
         btree[btree[node2].right_child].parent = node2;
 
-    // node1, node2 are parent and child
-    if (btree[node1].parent == node1)
-        btree[node1].parent = node2;
-    else if (btree[node1].left_child == node1)
-        btree[node1].left_child = node2;
+    // node1, node2 are parent and child    父子关系
+    if (btree[node1].parent == node1)          // 如果发现 node1 的 parent 变成了它自己，说明在交换过程中出现了“父指针自环”的临时状态。
+        btree[node1].parent = node2;           // 把 node1 的父节点改成 node2。
+    else if (btree[node1].left_child == node1) // 如果 node1 不是自己父亲，而是出现在自己的左孩子位置
+        btree[node1].left_child = node2;       // 把 node1 的左孩子改成 node2。
     else if (btree[node1].right_child == node1)
-        btree[node1].right_child = node2;
+        btree[node1].right_child = node2; // 把 node1 的右孩子改成 node2
 
+    // 以下对node2进行同样的操作
     if (btree[node2].parent == node2)
         btree[node2].parent = node1;
     else if (btree[node2].left_child == node2)
@@ -553,6 +556,7 @@ void Swap(int node1, int node2)
         btree[node2].right_child = node1;
 
     // root block may change
+    // 如果交换后根节点发生变换，就把根节点变量替换
     if (node1 == root_block)
         root_block = node2;
     else if (node2 == root_block)
@@ -562,13 +566,13 @@ void Swap(int node1, int node2)
 void Move(int node, int to_node)
 {
     // delete
-    if (btree[node].left_child == -1 && btree[node].right_child == -1)
+    if (btree[node].left_child == -1 && btree[node].right_child == -1) // 判断这个节点是不是叶子节点，也就是左孩子和右孩子都不存在
     {
         // no children
-        int parent = btree[node].parent;
-        if (btree[parent].left_child == node)
-            btree[parent].left_child = -1;
-        else if (btree[parent].right_child == node)
+        int parent = btree[node].parent;            // 先拿到它的父节点编号，后面要改父节点指向哪个孩子。
+        if (btree[parent].left_child == node)       // 如果父节点的左孩子正好是这个 node。
+            btree[parent].left_child = -1;          // 把父节点的左孩子改成 -1，表示这个位置现在空了
+        else if (btree[parent].right_child == node) // 同理
             btree[parent].right_child = -1;
         else
         {
@@ -576,25 +580,26 @@ void Move(int node, int to_node)
             exit(1);
         }
     }
-    else if (btree[node].left_child != -1 && btree[node].right_child != -1)
+    else if (btree[node].left_child != -1 && btree[node].right_child != -1) // 判断当前节点是不是同时有左孩子和右孩子，也就是“有两个孩子”的情况。
     {
         // two children
         do
         {
-            bool move_left;
+            bool move_left; // 先定义一个布尔变量，决定这次要和左孩子换还是和右孩子换。
             if (btree[node].left_child != -1 && btree[node].right_child != -1)
-                move_left = rand() % 2 == 0;
-            else if (btree[node].left_child != -1)
+                move_left = rand() % 2 == 0;       // 如果这个节点左右孩子都存在，就随机决定往左换还是往右换。
+            else if (btree[node].left_child != -1) // 如果只有左孩子，就只能和左孩子换，所以设成 true。
                 move_left = true;
             else
-                move_left = false;
+                move_left = false; // 否则就说明没有左孩子，那就只能和右孩子换，所以设成 false。
 
-            if (move_left)
+            if (move_left) // 如果要往左换，就把当前节点和左孩子交换。
                 Swap(node, btree[node].left_child);
-            else
+            else // 否则就把当前节点和右孩子交换。
                 Swap(node, btree[node].right_child);
-        } while (btree[node].left_child != -1 || btree[node].right_child != -1);
+        } while (btree[node].left_child != -1 || btree[node].right_child != -1); // 循环条件，意思是只要当前节点还有任意一个孩子，就继续再换一次。
 
+        // 把已经“沉到底”的节点，从它原来的父节点下面真正摘掉。即上面第1种情况
         int parent = btree[node].parent;
         if (btree[parent].left_child == node)
             btree[parent].left_child = -1;
@@ -609,18 +614,18 @@ void Move(int node, int to_node)
     else
     {
         // one child
-        int child;
+        int child; // 先定义一个临时变量 child，用来保存这个节点唯一的孩子。
         if (btree[node].left_child != -1)
-            child = btree[node].left_child;
+            child = btree[node].left_child; // 如果左孩子存在，就把左孩子编号取出来。
         else
-            child = btree[node].right_child;
+            child = btree[node].right_child; // 否则就说明唯一的孩子是右孩子，把右孩子编号取出来。
 
         int parent = btree[node].parent;
-        if (parent != -1)
+        if (parent != -1) // 如果它不是根节点，就继续更新父节点的孩子指针。
         {
             if (btree[parent].left_child == node)
-                btree[parent].left_child = child;
-            else if (btree[parent].right_child == node)
+                btree[parent].left_child = child;       // 如果父节点左孩子正好是当前节点，就把左孩子改成 child。
+            else if (btree[parent].right_child == node) // 否则如果父节点右孩子正好是当前节点，就把右孩子改成 child
                 btree[parent].right_child = child;
             else
             {
@@ -629,31 +634,33 @@ void Move(int node, int to_node)
             }
         }
 
-        btree[child].parent = parent;
+        btree[child].parent = parent; // 更新孩子的父母，完成交换
 
         // root block may change
-        if (node == root_block)
+        if (node == root_block) // 如果被删除的节点刚好是根节点，就把根更新成它的孩子。
             root_block = child;
     }
 
     // insert
-    int random_left_right = rand() % 4;
-    int child;
-    if (random_left_right == 0)
+    // 这段是在 Move 的“insert”阶段里，把已经删掉的 node 挂回到 to_node 下面。
+
+    int random_left_right = rand() % 4; // 随机生成一个位置选择值，用来决定把 node 挂到 to_node 的哪一侧。
+    int child;                          // 定义一个临时变量 child，保存 to_node 原来那个孩子。
+    if (random_left_right == 0)         // 这次要把 node 插到 to_node 的左边。
     {
-        child = btree[to_node].left_child;
-        btree[node].left_child = child;
-        btree[node].right_child = -1;
-        btree[to_node].left_child = node;
+        child = btree[to_node].left_child; // 先把 to_node 原来的左孩子保存到 child，避免后面覆盖掉。
+        btree[node].left_child = child;    // 把 child 接到 node 的左孩子位置，也就是让 node 继承原来左孩子那棵子树。
+        btree[node].right_child = -1;      // 把 node 的右孩子设成 -1，表示它这次只作为一个左孩子插入。
+        btree[to_node].left_child = node;  // 把 node 真正挂到 to_node 的左孩子位置。
     }
-    else if (random_left_right == 0)
+    else if (random_left_right == 0) // 这次要把 node 插到 to_node 的右边。
     {
-        child = btree[to_node].right_child;
-        btree[node].left_child = child;
-        btree[node].right_child = -1;
-        btree[to_node].right_child = node;
+        child = btree[to_node].right_child; // 先把 to_node 原来的右孩子保存到 child，避免后面覆盖掉。
+        btree[node].left_child = child;     // 把 child 接到 node 的左孩子位置，也就是让 node 继承原来左孩子那棵子树。
+        btree[node].right_child = -1;       // 把 node 的右孩子设成 -1，表示它这次只作为一个左孩子插入。
+        btree[to_node].right_child = node;  // 把 node 真正挂到 to_node 的左孩子位置。
     }
-    else if (random_left_right == 0)
+    else if (random_left_right == 0) // 这次要把 node 插到 to_node 的左边。但孩子插在右边
     {
         child = btree[to_node].left_child;
         btree[node].left_child = -1;
@@ -667,9 +674,9 @@ void Move(int node, int to_node)
         btree[node].right_child = child;
         btree[to_node].right_child = node;
     }
-    btree[node].parent = to_node;
+    btree[node].parent = to_node; // 把node的父节点更新
     if (child != -1)
-        btree[child].parent = node;
+        btree[child].parent = node; // 把孩子的父节点更新
 }
 
 void Verify(vector<HardBlock> &hb)
@@ -768,13 +775,12 @@ void SimulatedAnnealing()
                 // move
                 int node, to_node;
                 // 先随机选一个要移动的节点 node，再随机选一个目标节点 to_node，但要保证
-                // to_node != node      to_node 不能是 node 的父节点
                 // 这样是为了避免形成非法结构或立即构成环。最后调用 Move 把 node 挂到 to_node 下面。
                 node = rand() % num_hardblocks;
                 do
                 {
                     to_node = rand() % num_hardblocks;
-                } while (to_node == node || btree[node].parent == to_node);
+                } while (to_node == node || btree[node].parent == to_node); // to_node != node      to_node 不能是 node 的父节点
                 Move(node, to_node);
             }
             else // 这是兜底分支。按理说前面 rand() % 3 只会得到 0、1、2，所以这里不该进来。如果真的进来了，说明逻辑出了意外，程序直接报错退出。
