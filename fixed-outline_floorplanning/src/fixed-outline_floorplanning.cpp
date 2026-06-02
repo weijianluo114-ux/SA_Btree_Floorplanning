@@ -388,12 +388,14 @@ Cost CalculateCost()
     {
         int x_min = width + 1, x_max = 0;
         int y_min = height + 1, y_max = 0;
-        for (const int pin : net)
+        for (const int pin : net) // 这里的pin对应的是每一个要被连接的端口或模块的id，而比num_hardblocks下、数字小的是blocks，大的是teminal
         {
-            if (pin < num_hardblocks)
+            if (pin < num_hardblocks) // 对blocks的处理
             {
+                // 先计算中心点的位置
                 int x_center = hardblocks[pin].x + hardblocks[pin].width / 2;
                 int y_center = hardblocks[pin].y + hardblocks[pin].height / 2;
+                // 再依次比较中心点位置是否比当前的矩形要小
                 if (x_center < x_min)
                     x_min = x_center;
                 if (y_center < y_min)
@@ -405,7 +407,7 @@ Cost CalculateCost()
             }
             else
             {
-                const Terminal &t = terminals[pin - num_hardblocks];
+                const Terminal &t = terminals[pin - num_hardblocks]; // 引用terminals，以读取端口坐标
                 if (t.x < x_min)
                     x_min = t.x;
                 if (t.y < y_min)
@@ -417,9 +419,10 @@ Cost CalculateCost()
             }
         }
 
-        wirelength += (x_max - x_min) + (y_max - y_min);
+        wirelength += (x_max - x_min) + (y_max - y_min); // 计算HPWL
     }
 
+    // 将当前的cost存储下来
     Cost c;
     c.width = width;
     c.height = height;
@@ -428,21 +431,24 @@ Cost CalculateCost()
     c.R = R;
 
     // set normalization to initial floorplan area and wirelength
+    // 第一次进入这里时，把当前 floorplan 的面积记录为基准值 area_norm。
+    // 这样后面所有面积代价都相当于“相对初始解的倍数”
     if (area_norm == 0)
         area_norm = floorplan_area;
     if (wl_norm == 0)
-        wl_norm = wirelength;
+        wl_norm = wirelength; // 第一次进入这里时，把当前线长记录为基准值 wl_norm。后面线长代价也会按这个基准来归一化。
 
-    double area_cost = c.area / area_norm;
-    double wl_cost = c.wirelength / wl_norm;
-    double R_cost = (1 - R) * (1 - R);
+    double area_cost = c.area / area_norm;   // 计算面积代价。如果当前面积和初始面积一样，这项就是 1；如果更大，就大于 1
+    double wl_cost = c.wirelength / wl_norm; // 计算线长代价，和面积代价一样，也是相对初始值的比例
+    double R_cost = (1 - R) * (1 - R);       // 计算长宽比惩罚。这里希望 R 尽量接近 1，也就是版图尽量接近正方形；偏离 1 越多，惩罚越大
+    // 先把宽和高的越界惩罚初始化为 0，默认不惩罚。
     double width_penalty = 0;
     double height_penalty = 0;
-    if (width > W)
+    if (width > W) // 如果当前版图宽度超过固定边界 W，就加宽度惩罚。超得越多，这项越大。
         width_penalty = ((double)width / W);
     if (height > W)
         height_penalty = ((double)height / W);
-    c.cost = area_cost + wl_cost + R_cost + width_penalty + height_penalty;
+    c.cost = area_cost + wl_cost + R_cost + width_penalty + height_penalty; // 把所有代价项加起来，得到最终总成本。模拟退火后面就是用这个 c.cost 来判断当前布局好不好、要不要接受
 
 // #ifdef DEBUG
 //     cout << "Width:      " << c.width << '\n';
@@ -472,12 +478,12 @@ Cost CalculateCost()
     return c;
 }
 
-void Rotate(int node)
+void Rotate(int node) // 简单的交换宽高操作
 {
-    int temp = hardblocks[node].width;
+    int temp = hardblocks[node].width; // 定义一个名为 Rotate 的函数，参数 node 表示要旋转的硬块编号
     hardblocks[node].width = hardblocks[node].height;
     hardblocks[node].height = temp;
-    hardblocks[node].rotate = 1 - hardblocks[node].rotate;
+    hardblocks[node].rotate = 1 - hardblocks[node].rotate; // 如果原来是 0，就变成 1；如果原来是 1，就变成 0。
 }
 
 void Swap(int node1, int node2)
@@ -701,25 +707,28 @@ void SimulatedAnnealing()
     min_cost = CalculateCost();      // 先调用 CalculateCost 计算当前树对应的版图代价、宽高、面积、线长等，并把结果存进min_cost
     min_cost_floorplan = hardblocks; // 把当前这一版硬块布局复制到 min_cost_floorplan 里。hardblocks 里存的是每个块当前的坐标、宽高、旋转状态，所以这一步相当于把当前解的具体布局快照保存下来
 
-    const double P = 0.95;
-    const double r = 0.9;
-    // const double epsilon = 0.001; // coolest temperature
-    const int k = 20;
-    const int N = k * num_hardblocks;
+    const double P = 0.95; // 这是初始接受概率参数。它用于后面计算初始温度 T0，表示希望在一开始对较差解也有较高接受概率。
+    const double r = 0.9;  // 温度衰减系数。每一轮大循环结束后，温度会乘上这个值，也就是 T *= r;，表示逐步降温。
+    // const double epsilon = 0.001; // coolest temperature     //注释掉的最小温度阈值。原本可能想用它作为“冷却到某个程度就停止”的条件，但现在没用。
+    const int k = 20;                 // 每个硬块对应的试探次数系数。后面 N = k * num_hardblocks，表示每一轮允许的局部扰动规模和块数成正比。
+    const int N = k * num_hardblocks; // 每一温度下的基础扰动上限
+    // 初始温度。这个公式是根据“初始时差解接受概率约为 P”反推出来的。min_cost.cost 越大，初温越高；num_hardblocks 越多，初温也越高。
     const double T0 = -min_cost.cost * num_hardblocks / log(P);
 
-    double T = T0;
-    int MT = 0;
-    int uphill = 0;
-    int reject = 0;
-    Cost prev_cost = min_cost;
-    in_fixed_outline = false;
+    double T = T0;             // 当前温度，初始时等于 T0，后面每轮会下降
+    int MT = 0;                // 当前温度下已经尝试了多少次移动。通常理解为 move trial count
+    int uphill = 0;            // 当前温度下接受了多少次“更差”的解。用于控制当前温度下的搜索强度
+    int reject = 0;            // 当前温度下拒绝了多少次候选解。这个变量在这里统计没被接受的操作数
+    Cost prev_cost = min_cost; // 保存当前基准解的代价。后面每做一步扰动，都拿新代价和 prev_cost 比较
+    in_fixed_outline = false;  // 先假设还没有找到满足固定外框的可行解。后面如果找到，就会改成 true
 
-    clock_t init_time = clock();
-    clock_t time = init_time;
-    const int max_seconds = (num_hardblocks / 20) * (num_hardblocks / 20);
-    const int TIME_LIMIT = 1200 - 5; // 20 minutes
-    int seconds = 0, runtime = 0;
+    clock_t init_time = clock(); // 记录模拟退火开始时的 CPU 时间，用来算总运行时间
+    clock_t time = init_time;    // 记录“上一段计时起点”。后面如果超时但还没找到可行解，会重置这个时间点。
+
+    const int max_seconds = (num_hardblocks / 20) * (num_hardblocks / 20); // 一个按规模变化的阶段时间上限。块越多，这个值越大，允许搜索的单阶段时间越长。
+    const int TIME_LIMIT = 1200 - 5;                                       // 20 minutes    总运行时间上限，约等于 20 分钟减 5 秒缓冲。避免程序跑太久。
+    // 前者用于当前阶段超时判断，后者用于总时长限制
+    int seconds = 0, runtime = 0; // seconds 表示自上次 time 起经过了多少秒；runtime 表示从 init_time 开始累计运行了多少秒
 
     do
     {
@@ -729,21 +738,24 @@ void SimulatedAnnealing()
 
         do
         {
-            vector<HardBlock> hardblocks_temp(hardblocks);
-            vector<Node> btree_temp(btree);
-            int prev_root_block = root_block;
+            vector<HardBlock> hardblocks_temp(hardblocks); // 复制当前所有硬块的信息，作为临时备份。里面保存的是每个块当前的坐标、宽高、旋转状态等。
+            vector<Node> btree_temp(btree);                // 复制当前 B*-tree 的结构，作为临时备份。里面保存的是每个节点的父子关系。
+            int prev_root_block = root_block;              // 记录当前树的根节点编号。因为后面做 Swap 或 Move 时，根节点有可能变化，所以也要单独备份。
 
-            int M = rand() % 3;
-            if (M == 0)
+            // 这段是在每一轮扰动里，随机选择一种操作：旋转、交换、移动。它对应模拟退火里的“邻域搜索”。
+            int M = rand() % 3; // 随机生成一个 0、1 或 2，用来决定这次要做哪一种操作。
+            if (M == 0)         // 旋转操作
             {
                 // rotate
+                // 随机选一个硬块节点 node，然后调用 Rotate 把它宽高交换，也就是块旋转 90 度。
                 int node = rand() % num_hardblocks;
                 Rotate(node);
             }
-            else if (M == 1)
+            else if (M == 1) // 如果随机数是 1，就做 swap 操作。
             {
                 // swap
                 int node1, node2;
+                // 先随机选 node1，再随机选一个和它不同的 node2，然后调用 Swap 交换这两个节点在树中的位置。
                 node1 = rand() % num_hardblocks;
                 do
                 {
@@ -751,10 +763,13 @@ void SimulatedAnnealing()
                 } while (node2 == node1);
                 Swap(node1, node2);
             }
-            else if (M == 2)
+            else if (M == 2) // move 操作
             {
                 // move
                 int node, to_node;
+                // 先随机选一个要移动的节点 node，再随机选一个目标节点 to_node，但要保证
+                // to_node != node      to_node 不能是 node 的父节点
+                // 这样是为了避免形成非法结构或立即构成环。最后调用 Move 把 node 挂到 to_node 下面。
                 node = rand() % num_hardblocks;
                 do
                 {
@@ -762,7 +777,7 @@ void SimulatedAnnealing()
                 } while (to_node == node || btree[node].parent == to_node);
                 Move(node, to_node);
             }
-            else
+            else // 这是兜底分支。按理说前面 rand() % 3 只会得到 0、1、2，所以这里不该进来。如果真的进来了，说明逻辑出了意外，程序直接报错退出。
             {
                 cout << "[Error] Unspecified Move\n";
                 exit(1);
