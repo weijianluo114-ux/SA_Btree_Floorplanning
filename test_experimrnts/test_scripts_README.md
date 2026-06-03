@@ -32,9 +32,8 @@
 ## 使用示例
 
 ```bash
-# 进入 scripts/ 目录，运行脚本（假设脚本名为 test_scripts.py）
-cd scripts/
-python test_scripts.py --num_runs 100 --white_space_ratio 0.15
+# 进入根目录，运行脚本（假设脚本名为 test_scripts.py）
+python test_scripts.py --num_runs 2 --white_space_ratio 0.15
 
 # 自定义所有参数
 python test_scripts.py \

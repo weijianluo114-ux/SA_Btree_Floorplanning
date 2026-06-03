@@ -5,3 +5,4 @@ hw3_gdb
 *.o
 log/
 results/
+seeds/

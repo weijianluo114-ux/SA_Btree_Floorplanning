@@ -16,6 +16,8 @@ from pathlib import Path
 from datetime import datetime
 import statistics
 from typing import Dict, List, Optional, Tuple
+import re
+
 
 # ---------- 参数解析 ----------
 def parse_args():
@@ -124,7 +126,15 @@ def main():
 
     # 输出目录
     if args.output_dir is None:
-        output_dir = script_dir / f"./output/test_{args.num_runs}"
+        # 从 hardblocks 文件名中提取模块数量（如 n100.hardblocks -> 100）
+        match = re.search(r'(\d+)', args.hardblocks)
+        if match:
+            num_blocks = match.group(1)
+        else:
+            num_blocks = "unknown"
+        # 将浮点数 white_space_ratio 中的小数点替换为下划线，避免路径问题
+        ratio_str = str(args.white_space_ratio).replace('.', '_')
+        output_dir = script_dir / f"./output/test_{num_blocks}blocks_ratio_{ratio_str}_total_{args.num_runs}"
     else:
         output_dir = Path(args.output_dir)
     output_dir = output_dir.resolve()

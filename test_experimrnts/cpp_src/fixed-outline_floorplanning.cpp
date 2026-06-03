@@ -910,8 +910,9 @@ void OutputFloorplan(string output_file, int wirelength, vector<HardBlock> &hb)
     ofstream file;          // 创建一个文件输出流对象。
     file.open(output_file); // 打开指定的输出文件，准备写入。
 
-    file << "Wirelength " << wirelength << '\n';
-    file << "Blocks\n";
+    file << "W:" << W << '\n';
+    file << "Wirelength " << ":" << wirelength << '\n';
+    file << "Blocks" << ":" << num_hardblocks << '\n';
 
     for (int i = 0; i < num_hardblocks; i++)
     {
