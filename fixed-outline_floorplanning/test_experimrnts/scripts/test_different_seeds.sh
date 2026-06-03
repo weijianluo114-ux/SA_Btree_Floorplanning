@@ -2,7 +2,7 @@
 
 # ================== 配置 ==================
 # 可执行文件（从 bin/ 向上一层即是 test_experiments/，hw3_dbg 编译后默认在这里）
-EXEC="../hw3_dbg"
+EXEC="../bin/hw3_dbg"
 
 # 测试数据文件（testcase 与 test_experiments 平级，所以从 bin/ 出发需要 ../../testcase/）
 HARDBLOCKS="../../testcase/n100.hardblocks"
@@ -16,8 +16,8 @@ NUM_RUNS=20
 FLOORPLAN_PREFIX="../../output/test_${NUM_RUNS}"
 
 # 日志文件和种子文件存放在脚本所在目录（bin/）
-LOG_FILE="./running_results_$(date +%Y-%m-%d_%H:%M:%S).txt"
-SEED_FILE="./seeds_${NUM_RUNS}_$(date +%Y-%m-%d_%H:%M:%S).txt"
+LOG_FILE="../log/running_results_$(date +%Y-%m-%d_%H:%M:%S).txt"
+SEED_FILE="../seeds/seeds_${NUM_RUNS}_$(date +%Y-%m-%d_%H:%M:%S).txt"
 
 # 确保 output 目录存在
 mkdir -p ../../output/test_${NUM_RUNS}

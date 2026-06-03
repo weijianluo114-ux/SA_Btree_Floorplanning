@@ -1,5 +1,5 @@
 # ===== Debug 版本 Makefile =====
-# 使用方法: make -f Makefile.debug
+# 使用方法: make -f Makefile
 # 测试命令： gdb --args ./hw3_dbg ../testcase/n100.hardblocks ../testcase/n100.nets ../testcase/n100.pl ../output/n100_01.floorplan 0.1
 
 # 编译器
@@ -32,7 +32,7 @@ all: $(BIN_DIR) $(EXE)
 
 # 先确保 bin 目录存在
 $(BIN_DIR):
-    mkdir -p $(BIN_DIR)
+	mkdir -p $(BIN_DIR)
 
 # 链接
 $(EXE): $(OBJ)
@@ -40,9 +40,9 @@ $(EXE): $(OBJ)
 
 # 编译规则：把 .o 生成到 bin 目录
 $(BIN_DIR)/%.o: %.cpp | $(BIN_DIR)
-    $(GXX) $(GXXFLAGS) -c -o $@ $<
+	$(GXX) $(GXXFLAGS) -c -o $@ $<
 
 # 清理
 .PHONY: clean
 clean:
-    rm -rf $(BIN_DIR)/*.o $(EXE)
+	rm -rf $(BIN_DIR)/*.o $(EXE)
