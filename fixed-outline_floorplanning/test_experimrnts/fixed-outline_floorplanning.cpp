@@ -450,30 +450,30 @@ Cost CalculateCost()
         height_penalty = ((double)height / W);
     c.cost = area_cost + wl_cost + R_cost + width_penalty + height_penalty; // 把所有代价项加起来，得到最终总成本。模拟退火后面就是用这个 c.cost 来判断当前布局好不好、要不要接受
 
-// #ifdef DEBUG
-//     cout << "Width:      " << c.width << '\n';
-//     cout << "Height:     " << c.height << '\n';
-//     cout << "Area:       " << c.area << '\n';
-//     cout << "Wirelength: " << c.wirelength << '\n';
-//     cout << "R:          " << c.R << '\n';
-//     cout << "Cost:       " << area_cost << " + " << wl_cost << " + " << R_cost << " + "
-//          << width_penalty << " + " << height_penalty << " = " << c.cost << '\n';
-//     cout << '\n';
-// #endif
-#ifdef DEBUG
-    static auto last_update = std::chrono::steady_clock::now();
-    auto now = std::chrono::steady_clock::now();
-    double elapsed = std::chrono::duration<double>(now - last_update).count();
-    if (elapsed >= 1.0)
-    {
-        std::ostringstream oss;
-        oss << "\rCost:" << c.cost << " | Area:" << c.area
-            << " | WL:" << c.wirelength << " | W:" << c.width
-            << " H:" << c.height << " | R:" << c.R << "          ";
-        std::cout << oss.str() << std::flush;
-        last_update = now;
-    }
-#endif
+    // #ifdef DEBUG
+    //     cout << "Width:      " << c.width << '\n';
+    //     cout << "Height:     " << c.height << '\n';
+    //     cout << "Area:       " << c.area << '\n';
+    //     cout << "Wirelength: " << c.wirelength << '\n';
+    //     cout << "R:          " << c.R << '\n';
+    //     cout << "Cost:       " << area_cost << " + " << wl_cost << " + " << R_cost << " + "
+    //          << width_penalty << " + " << height_penalty << " = " << c.cost << '\n';
+    //     cout << '\n';
+    // #endif
+    // #ifdef DEBUG     //在批量运行的情况下把这个实时查看关闭
+    //     static auto last_update = std::chrono::steady_clock::now();
+    //     auto now = std::chrono::steady_clock::now();
+    //     double elapsed = std::chrono::duration<double>(now - last_update).count();
+    //     if (elapsed >= 1.0)
+    //     {
+    //         std::ostringstream oss;
+    //         oss << "\rCost:" << c.cost << " | Area:" << c.area
+    //             << " | WL:" << c.wirelength << " | W:" << c.width
+    //             << " H:" << c.height << " | R:" << c.R << "          ";
+    //         std::cout << oss.str() << std::flush;
+    //         last_update = now;
+    //     }
+    // #endif
 
     return c;
 }
@@ -679,24 +679,28 @@ void Move(int node, int to_node)
         btree[child].parent = node; // 把孩子的父节点更新
 }
 
+// Verify 函数检查传入的版图 hb（所有硬块）的矩形是否两两重叠；若发现任意一对块有重叠，打印错误并退出程序。复杂度为 O(n^2)。
 void Verify(vector<HardBlock> &hb)
 {
-    for (int i = 0; i < num_hardblocks; i++)
+    for (int i = 0; i < num_hardblocks; i++) // 外层循环，遍历每个硬块作为第1个矩形。
     {
+        // 计算每个硬块的坐标
         int x_bl1 = hb[i].x;
         int y_bl1 = hb[i].y;
         int x_tr1 = x_bl1 + hb[i].width;
         int y_tr1 = y_bl1 + hb[i].height;
-        for (int j = 0; j < num_hardblocks; j++)
+        for (int j = 0; j < num_hardblocks; j++) // 内层循环，遍历每个硬块作为第2个矩形（与第1个做比较）。
         {
             if (i == j)
                 continue;
 
+            // 计算第2个硬块的所有坐标
             int x_bl2 = hb[j].x;
             int y_bl2 = hb[j].y;
             int x_tr2 = x_bl2 + hb[j].width;
             int y_tr2 = y_bl2 + hb[j].height;
 
+            // 判断是否重叠
             if (!(x_tr1 <= x_bl2 || x_bl1 >= x_tr2 || y_tr1 <= y_bl2 || y_bl1 >= y_tr2))
             {
                 printf("[Error] hardblocks overlapped\n");
@@ -714,9 +718,9 @@ void SimulatedAnnealing()
     min_cost = CalculateCost();      // 先调用 CalculateCost 计算当前树对应的版图代价、宽高、面积、线长等，并把结果存进min_cost
     min_cost_floorplan = hardblocks; // 把当前这一版硬块布局复制到 min_cost_floorplan 里。hardblocks 里存的是每个块当前的坐标、宽高、旋转状态，所以这一步相当于把当前解的具体布局快照保存下来
 
-    const double P = 0.95; // 这是初始接受概率参数。它用于后面计算初始温度 T0，表示希望在一开始对较差解也有较高接受概率。
-    const double r = 0.9;  // 温度衰减系数。每一轮大循环结束后，温度会乘上这个值，也就是 T *= r;，表示逐步降温。
-    // const double epsilon = 0.001; // coolest temperature     //注释掉的最小温度阈值。原本可能想用它作为“冷却到某个程度就停止”的条件，但现在没用。
+    const double P = 0.95;            // 这是初始接受概率参数。它用于后面计算初始温度 T0，表示希望在一开始对较差解也有较高接受概率。
+    const double r = 0.9;             // 温度衰减系数。每一轮大循环结束后，温度会乘上这个值，也就是 T *= r;，表示逐步降温。
+    const double epsilon = 0.001;     // coolest temperature     //注释掉的最小温度阈值。原本可能想用它作为“冷却到某个程度就停止”的条件，但现在没用。
     const int k = 20;                 // 每个硬块对应的试探次数系数。后面 N = k * num_hardblocks，表示每一轮允许的局部扰动规模和块数成正比。
     const int N = k * num_hardblocks; // 每一温度下的基础扰动上限
     // 初始温度。这个公式是根据“初始时差解接受概率约为 P”反推出来的。min_cost.cost 越大，初温越高；num_hardblocks 越多，初温也越高。
@@ -733,7 +737,8 @@ void SimulatedAnnealing()
     clock_t time = init_time;    // 记录“上一段计时起点”。后面如果超时但还没找到可行解，会重置这个时间点。
 
     const int max_seconds = (num_hardblocks / 20) * (num_hardblocks / 20); // 一个按规模变化的阶段时间上限。块越多，这个值越大，允许搜索的单阶段时间越长。
-    const int TIME_LIMIT = 1200 - 5;                                       // 20 minutes    总运行时间上限，约等于 20 分钟减 5 秒缓冲。避免程序跑太久。
+    // const int max_seconds = 200;     // 一个按规模变化的阶段时间上限。块越多，这个值越大，允许搜索的单阶段时间越长。
+    const int TIME_LIMIT = 1200 - 5; // 20 minutes    总运行时间上限，约等于 20 分钟减 5 秒缓冲。避免程序跑太久。
     // 前者用于当前阶段超时判断，后者用于总时长限制
     int seconds = 0, runtime = 0; // seconds 表示自上次 time 起经过了多少秒；runtime 表示从 init_time 开始累计运行了多少秒
 
@@ -813,16 +818,16 @@ void SimulatedAnnealing()
                     }
                     else
                     {
-                        in_fixed_outline = true;
-                        min_cost_root_block_fixed_outline = root_block;
-                        min_cost_fixed_outline = cur_cost;
-                        min_cost_floorplan_fixed_outline = hardblocks;
-                        min_cost_btree_fixed_outline = btree;
+                        in_fixed_outline = true;                        // 标记可行解: in_fixed_outline = true; — 标记已经找到一个落入固定外形（宽高都 <= W）的可行解
+                        min_cost_root_block_fixed_outline = root_block; // 记录当前解的根块编号，便于后续恢复/输出
+                        min_cost_fixed_outline = cur_cost;              // 把当前计算得到的 Cost（宽、高、面积、线长、总代价等）保存为当前可行解的最优代价记录
+                        min_cost_floorplan_fixed_outline = hardblocks;  // 复制并保存当前所有硬块的位置/尺寸/旋转状态，作为可行解的最优版图快照
+                        min_cost_btree_fixed_outline = btree;           // 复制并保存当前的 B-树结构，作为可行解对应的树结构快照
                     }
                 }
 
                 // infeasible solution with minimum cost
-                if (cur_cost.cost < min_cost.cost)
+                if (cur_cost.cost < min_cost.cost) // 若当前解的总代价更小，则更新“历史最优解”
                 {
                     min_cost_root_block = root_block;
                     min_cost = cur_cost;
@@ -834,28 +839,32 @@ void SimulatedAnnealing()
             }
             else
             {
-                reject++;
-                root_block = prev_root_block;
+                reject++;                     // 增加拒绝计数器（记录本次扰动被拒绝），用于后续停止/统计条件
+                root_block = prev_root_block; // 把根节点恢复到扰动前的值（prev_root_block 在扰动前保存），以撤销可能的根变更
                 if (M == 0)
-                    hardblocks = hardblocks_temp;
+                    hardblocks = hardblocks_temp; // 根据扰动类型恢复状态——当 M==0（旋转）只修改了 hardblocks，所以用 hardblocks_temp 回退
                 else
-                    btree = btree_temp;
+                    btree = btree_temp; // 否则（swap 或 move）修改的是 btree，所以用 btree_temp 回退
             }
-        } while (uphill <= N && MT <= 2 * N);
+        } while (uphill <= N && MT <= 2 * N); // 当拒绝次数小于k*num_blocks并且扰动次数小于2倍的k*num_blocks就继续，即拒绝够多或者扰动够多就结束该温度下的扰动
 
-        T *= r;
+        T *= r; // 降低温度
 
-        seconds = (clock() - time) / CLOCKS_PER_SEC;
-        runtime = (clock() - init_time) / CLOCKS_PER_SEC;
+        seconds = (clock() - time) / CLOCKS_PER_SEC;      // 计算自上一次重置 time 以来经过的秒数。
+        runtime = (clock() - init_time) / CLOCKS_PER_SEC; // 计算从模拟退火开始 (init_time) 到现在的总运行秒数。
         if (seconds >= max_seconds && in_fixed_outline == false)
-        {
+        { // 如果本阶段耗时超过 max_seconds 并且还没找到可行解，则执行超时处理：
             cout << "Overtime " << min_cost.width << " " << min_cost.height << '\n';
-            seconds = 0;
+            seconds = 0; // 将 seconds 清零并把 time 设为当前时刻（重置阶段计时器）
             time = clock();
-            T = T0;
+            T = T0; // 将温度 T 重置为初始温度 T0（相当于在超时后重新从高温开始搜索）
         }
-        //} while ((float)reject / MT <= 0.95 && T >= epsilon);
-    } while (seconds < max_seconds && runtime < TIME_LIMIT);
+        // 当且仅当两个条件都满足时继续：
+        // 拒绝率 (float)reject/MT 小于等于 0.95（拒绝太多则停止当前退火过程），
+        // 当前温度 T 不低于阈值 epsilon（温度过低也会停止）。
+    } while ((float)reject / MT <= 0.95 && T >= epsilon);
+    // 下面表明曾有过以阶段耗时和总运行时间为停止条件的替代退出策略。
+    //  } while (seconds < max_seconds && runtime < TIME_LIMIT);
 
     if (in_fixed_outline)
     {
@@ -955,12 +964,21 @@ int main(int argc, char **argv)
     string floorplan_file = argv[4];
     white_space_ratio = atof(argv[5]); // 将 C 风格字符串转换为双精度浮点数
 
+    unsigned int seed;
+    if (argc >= 7)
+    {
+        seed = static_cast<unsigned int>(atoi(argv[6])); // 从外部传入种子
+    }
+    else
+    {
+        seed = GetRandomSeed();
+        // unsigned int seed = time(NULL);
+    }
+
     ReadHardblocksFile(hardblocks_file);
     ReadNetsFile(nets_file);
     ReadTerminalsFile(terminals_file);
 
-    unsigned int seed = GetRandomSeed();
-    // unsigned int seed = time(NULL);
     srand(seed);
     cout << "Random seed: " << seed << "\n\n";
 
