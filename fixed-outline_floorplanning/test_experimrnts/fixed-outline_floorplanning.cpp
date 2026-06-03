@@ -881,7 +881,7 @@ void SimulatedAnnealing()
         cout << "Cost:       " << min_cost_fixed_outline.cost << '\n';
         cout << '\n';
 
-        Verify(min_cost_floorplan_fixed_outline);
+        Verify(min_cost_floorplan_fixed_outline); // 验证硬块的布局之间有无重叠
     }
     else
     {
@@ -902,10 +902,11 @@ void SimulatedAnnealing()
     }
 }
 
+// 这个函数的作用是把当前版图结果写到输出文件里，格式包括总线长和每个硬块的坐标、尺寸、是否旋转
 void OutputFloorplan(string output_file, int wirelength, vector<HardBlock> &hb)
 {
-    ofstream file;
-    file.open(output_file);
+    ofstream file;          // 创建一个文件输出流对象。
+    file.open(output_file); // 打开指定的输出文件，准备写入。
 
     file << "Wirelength " << wirelength << '\n';
     file << "Blocks\n";
