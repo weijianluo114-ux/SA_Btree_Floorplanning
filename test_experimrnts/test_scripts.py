@@ -20,13 +20,13 @@ from typing import Dict, List, Optional, Tuple
 # ---------- 参数解析 ----------
 def parse_args():
     parser = argparse.ArgumentParser(description="批量运行 hw3_dbg 并收集结果")
-    parser.add_argument("--executable", type=str, default="../bin/hw3_dbg",
+    parser.add_argument("--executable", type=str, default="./bin/hw3_dbg",
                         help="可执行文件路径（相对于脚本位置）")
-    parser.add_argument("--hardblocks", type=str, default="../../testcase/n100.hardblocks",
+    parser.add_argument("--hardblocks", type=str, default="./testcase/n100.hardblocks",
                         help="hardblocks 文件路径")
-    parser.add_argument("--nets", type=str, default="../../testcase/n100.nets",
+    parser.add_argument("--nets", type=str, default="./testcase/n100.nets",
                         help="nets 文件路径")
-    parser.add_argument("--terminals", type=str, default="../../testcase/n100.pl",
+    parser.add_argument("--terminals", type=str, default="./testcase/n100.pl",
                         help="terminals 文件路径")
     parser.add_argument("--white_space_ratio", type=float, default=0.1,
                         help="空白比例")
@@ -124,7 +124,7 @@ def main():
 
     # 输出目录
     if args.output_dir is None:
-        output_dir = script_dir / f"../../output/test_{args.num_runs}"
+        output_dir = script_dir / f"./output/test_{args.num_runs}"
     else:
         output_dir = Path(args.output_dir)
     output_dir = output_dir.resolve()
@@ -133,7 +133,7 @@ def main():
     # 日志文件（原始输出）
     timestamp = datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
     if args.log_file is None:
-        log_file = script_dir / f"../log/running_results_{timestamp}.txt"
+        log_file = script_dir / f"./log/running_results_{timestamp}.txt"
     else:
         log_file = Path(args.log_file)
     log_file = log_file.resolve()
@@ -141,7 +141,7 @@ def main():
 
     # 种子文件
     if args.seed_file is None:
-        seed_file = script_dir / f"../seeds/seeds_{args.num_runs}_{timestamp}.txt"
+        seed_file = script_dir / f"./seeds/seeds_{args.num_runs}_{timestamp}.txt"
     else:
         seed_file = Path(args.seed_file)
     seed_file = seed_file.resolve()
@@ -149,7 +149,7 @@ def main():
 
     # 结果 CSV 文件
     if args.results_csv is None:
-        results_csv = script_dir / f"../results/results_{args.num_runs}_{timestamp}.csv"
+        results_csv = script_dir / f"./results/results_{args.num_runs}_{timestamp}.csv"
     else:
         results_csv = Path(args.results_csv)
     results_csv = results_csv.resolve()
@@ -157,7 +157,11 @@ def main():
 
     # 编译
     if not args.skip_make:
-        run_make(script_dir.parent)
+        cpp_src_dir = script_dir / "cpp_src"
+        if not cpp_src_dir.exists():
+            print(f"错误: cpp_src 目录不存在: {cpp_src_dir}", file=sys.stderr)
+            sys.exit(1)
+        run_make(cpp_src_dir)
 
     # 检查可执行文件
     if not exec_path.exists():

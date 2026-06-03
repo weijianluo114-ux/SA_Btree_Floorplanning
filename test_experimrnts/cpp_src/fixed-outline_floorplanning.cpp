@@ -718,9 +718,11 @@ void SimulatedAnnealing()
     min_cost = CalculateCost();      // 先调用 CalculateCost 计算当前树对应的版图代价、宽高、面积、线长等，并把结果存进min_cost
     min_cost_floorplan = hardblocks; // 把当前这一版硬块布局复制到 min_cost_floorplan 里。hardblocks 里存的是每个块当前的坐标、宽高、旋转状态，所以这一步相当于把当前解的具体布局快照保存下来
 
-    const double P = 0.95;            // 这是初始接受概率参数。它用于后面计算初始温度 T0，表示希望在一开始对较差解也有较高接受概率。
-    const double r = 0.9;             // 温度衰减系数。每一轮大循环结束后，温度会乘上这个值，也就是 T *= r;，表示逐步降温。
-    const double epsilon = 0.001;     // coolest temperature     //注释掉的最小温度阈值。原本可能想用它作为“冷却到某个程度就停止”的条件，但现在没用。
+    const double P = 0.95;           // 这是初始接受概率参数。它用于后面计算初始温度 T0，表示希望在一开始对较差解也有较高接受概率。
+    const double r = 0.9;            // 温度衰减系数。每一轮大循环结束后，温度会乘上这个值，也就是 T *= r;，表示逐步降温。
+    const double epsilon = 0.0001;   // coolest temperature     //注释掉的最小温度阈值。原本可能想用它作为“冷却到某个程度就停止”的条件，但现在没用。
+    const double reject_rate = 0.99; // 拒绝率
+
     const int k = 20;                 // 每个硬块对应的试探次数系数。后面 N = k * num_hardblocks，表示每一轮允许的局部扰动规模和块数成正比。
     const int N = k * num_hardblocks; // 每一温度下的基础扰动上限
     // 初始温度。这个公式是根据“初始时差解接受概率约为 P”反推出来的。min_cost.cost 越大，初温越高；num_hardblocks 越多，初温也越高。
@@ -862,7 +864,7 @@ void SimulatedAnnealing()
         // 当且仅当两个条件都满足时继续：
         // 拒绝率 (float)reject/MT 小于等于 0.95（拒绝太多则停止当前退火过程），
         // 当前温度 T 不低于阈值 epsilon（温度过低也会停止）。
-    } while ((float)reject / MT <= 0.95 && T >= epsilon);
+    } while ((float)reject / MT <= reject_rate && T >= epsilon);
     // 下面表明曾有过以阶段耗时和总运行时间为停止条件的替代退出策略。
     //  } while (seconds < max_seconds && runtime < TIME_LIMIT);
 

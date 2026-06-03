@@ -25,7 +25,7 @@
    - 统计信息同时打印到终端并追加到日志文件末尾。
 
 6. **路径处理**  
-   所有路径均相对于脚本所在目录（`scripts/`）自动解析为绝对路径，确保与原始 Bash 脚本的目录结构兼容。
+   所有路径均相对于脚本所在目录（`根目录`）自动解析为绝对路径，确保与原始 Bash 脚本的目录结构兼容。
 
 ---
 
@@ -39,15 +39,15 @@ python test_scripts.py --num_runs 100 --white_space_ratio 0.15
 # 自定义所有参数
 python test_scripts.py \
     --executable ../bin/hw3_dbg \
-    --hardblocks ../../testcase/n200.hardblocks \
-    --nets ../../testcase/n200.nets \
-    --terminals ../../testcase/n200.pl \
+    --hardblocks ./testcase/n200.hardblocks \
+    --nets ./testcase/n200.nets \
+    --terminals ./testcase/n200.pl \
     --white_space_ratio 0.2 \
     --num_runs 50 \
-    --output_dir ../../output/my_exp \
-    --log_file ../log/my_exp.log \
-    --seed_file ../seeds/my_seeds.txt \
-    --results_csv ../results/my_results.csv
+    --output_dir ./output/my_exp \
+    --log_file ./log/my_exp.log \
+    --seed_file ./seeds/my_seeds.txt \
+    --results_csv ./results/my_results.csv
 ```
 
 ---
@@ -55,7 +55,7 @@ python test_scripts.py \
 ## 注意事项
 
 - 脚本假定您的目录结构与 Bash 脚本一致：  
-  `test_experiments/scripts/` 下放置本脚本，`../bin/hw3_dbg` 为编译产物，`../../testcase/` 存放测试数据。
+  `test_experiments/` 下放置本脚本，`./bin/hw3_dbg` 为编译产物，`./testcase/` 存放测试数据。
 - 若需跳过编译，添加 `--skip_make` 参数。
 - 所有输出目录（`output/`、`log/`、`seeds/`、`results/`）会自动创建。
 - 缺失指标（如程序未输出某行）在 CSV 中为空，统计时自动忽略。
