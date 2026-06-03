@@ -15,7 +15,7 @@ GXX := g++
 GXXFLAGS := -std=c++11 -g -Og -Wall -Wextra -DDEBUG
 
 # 输出目录
-BIN_DIR := bin
+BIN_DIR := ../bin
 
 # 源文件列表（多个源文件）
 SRC := fixed-outline_floorplanning.cpp utils.cpp
