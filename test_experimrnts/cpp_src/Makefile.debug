@@ -18,7 +18,7 @@ GXXFLAGS := -std=c++11 -g -Og -Wall -Wextra -DDEBUG
 BIN_DIR := ../bin
 
 # 源文件列表（多个源文件）
-SRC := fixed-outline_floorplanning.cpp utils.cpp
+SRC := fixed-outline_floorplanning.cpp utils.cpp GMS.cpp
 
 # 目标文件列表
 OBJ := $(addprefix $(BIN_DIR)/,$(SRC:.cpp=.o))

@@ -74,12 +74,11 @@ def parse_layout_file(file_path):
         print(f"警告: 文件声明有 {num_blocks} 个块，但实际解析到 {len(blocks)} 个")
 
     return chip_width, blocks
-
 def draw_layout(blocks, chip_width=None, output_image=None, show_labels=True, dpi=150):
     """
     绘制矩形布局。
     blocks: 列表 of (name, x, y, width, height)
-    chip_width: 芯片宽度（若提供，则设置画布 x 轴范围 0..chip_width）
+    chip_width: 目标芯片宽度/高度（正方形）。若提供，则比较实际布局是否超出。
     output_image: 输出图片路径，若为 None 则显示窗口
     show_labels: 是否在每个矩形中央显示块名称
     """
@@ -89,9 +88,38 @@ def draw_layout(blocks, chip_width=None, output_image=None, show_labels=True, dp
 
     fig, ax = plt.subplots(figsize=(12, 10))
 
-    # 确定画布范围
-    max_x = chip_width if chip_width is not None else max(b[1] + b[3] for b in blocks)
-    max_y = max(b[2] + b[4] for b in blocks)  # 最大 y + 高度
+    # 计算实际最大 x 和 y（块右下角坐标）
+    max_x = max(b[1] + b[3] for b in blocks)  # x + width
+    max_y = max(b[2] + b[4] for b in blocks)  # y + height
+
+    if chip_width is not None:
+        target = chip_width
+        # 判断是否超出目标
+        if max_x > target or max_y > target:
+            line_color = 'red'
+            status = "not fix target"
+            # 超出时，画布范围取实际最大值与目标中的较大者，以便看到超出部分
+            limit = max(max_x, max_y, target)
+        else:
+            line_color = 'green'
+            status = "fix target"
+            # 未超出时，画布范围取目标值（可以留少量边距，但为了清晰直接取target）
+            limit = target
+
+        # 画垂直线 x = target 和水平线 y = target
+        ax.axvline(x=target, color=line_color, linestyle='--', linewidth=2,
+                   label=f'Target W={target} ({status})')
+        ax.axhline(y=target, color=line_color, linestyle='--', linewidth=2)
+
+        # 设置坐标轴范围（0 到 limit）
+        ax.set_xlim(0, limit)
+        ax.set_ylim(0, limit)
+    else:
+        status = "no target"
+        # 未提供目标，使用实际最大值并留一点边距
+        limit = max(max_x, max_y)
+        ax.set_xlim(0, limit * 1.02)
+        ax.set_ylim(0, limit * 1.02)
 
     # 绘制每个矩形
     for name, x, y, w, h in blocks:
@@ -102,18 +130,17 @@ def draw_layout(blocks, chip_width=None, output_image=None, show_labels=True, dp
         ax.add_patch(rect)
 
         if show_labels:
-            # 在矩形中心放置名称
             cx = x + w / 2
             cy = y + h / 2
             ax.text(cx, cy, name, ha='center', va='center', fontsize=8, fontweight='bold')
 
-    # 设置坐标轴
-    ax.set_xlim(0, max_x * 1.02)  # 留一点边距
-    ax.set_ylim(0, max_y * 1.02)
-    ax.set_aspect('equal')        # 保持矩形比例不变形
+    ax.set_aspect('equal')
     ax.set_xlabel('X')
     ax.set_ylabel('Y')
-    ax.set_title(f'Floorplan Layout (Blocks: {len(blocks)})')
+    title = f'Floorplan Layout (Blocks: {len(blocks)})'
+    if chip_width is not None:
+        title += f' - Target W={chip_width} ({status})'
+    ax.set_title(title)
     ax.grid(True, linestyle='--', alpha=0.5)
 
     # 保存或显示

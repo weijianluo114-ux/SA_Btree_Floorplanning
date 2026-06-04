@@ -77,9 +77,13 @@ def generate_seeds(num_runs: int) -> List[int]:
 
 def parse_output(output_text: str) -> Dict[str, Optional[float]]:
     """
-    从程序输出中提取 Width, Height, Area, Wirelength, R, Cost。
-    返回字典，缺失的值设为 None。
+    从程序输出中提取指标，包括耗时和可行解状态。
+    返回字典：
+        - 数值指标：Width, Height, Area, Wirelength, R, Cost,
+                     BuildTree_T_us, SA_T_s
+        - 可行解标记：Feasible (1=找到可行解, 0=未找到)
     """
+    # 数值提取模式
     patterns = {
         "Width": r"Width:\s+(\d+)",
         "Height": r"Height:\s+(\d+)",
@@ -87,15 +91,29 @@ def parse_output(output_text: str) -> Dict[str, Optional[float]]:
         "Wirelength": r"Wirelength:\s+(\d+)",
         "R": r"R:\s+([0-9.]+)",
         "Cost": r"Cost:\s+([0-9.]+)",
+        "BuildTree_T_us": r"\[BuildInitBtree\] 耗时:\s+(\d+)\s*us",
+        "SA_T_s": r"\[SimulatedAnnealing\] 耗时:\s+([0-9.]+)\s*s",
     }
     result = {}
     for key, pat in patterns.items():
         match = re.search(pat, output_text)
         if match:
             val = match.group(1)
-            result[key] = float(val) if '.' in val else int(val)
+            if key in ["BuildTree_T_us", "SA_T_s"]:
+                result[key] = float(val)
+            elif '.' in val:
+                result[key] = float(val)
+            else:
+                result[key] = int(val)
         else:
             result[key] = None
+
+    # 检测可行解：出现 "Not Found feasible solution" 则标记为 0，否则为 1
+    if re.search(r"Not Found feasible solution", output_text):
+        result["Feasible"] = 0
+    else:
+        result["Feasible"] = 1
+
     return result
 
 def run_single(exec_path: Path, hardblocks: str, nets: str, terminals: str,
@@ -159,7 +177,7 @@ def main():
 
     # 结果 CSV 文件
     if args.results_csv is None:
-        results_csv = script_dir / f"./results/results_{args.num_runs}_{timestamp}.csv"
+        results_csv = script_dir / f"./results/n_runs_result/results_{args.num_runs}_{timestamp}.csv"
     else:
         results_csv = Path(args.results_csv)
     results_csv = results_csv.resolve()
@@ -234,6 +252,9 @@ def main():
             metrics.get("Wirelength"),
             metrics.get("R"),
             metrics.get("Cost"),
+            metrics.get("BuildTree_T_us"),
+            metrics.get("SA_T_s"),
+            metrics.get("Feasible"),   # 添加可行解标记
         ]
         table_data.append(row)
 
@@ -243,14 +264,22 @@ def main():
     # 写入 CSV 表格
     with open(results_csv, "w", newline="") as csvfile:
         writer = csv.writer(csvfile)
-        writer.writerow(["run", "seed", "Width", "Height", "Area", "Wirelength", "R", "Cost"])
-        writer.writerows(table_data)
+        writer.writerow([
+            "run", "seed", "Width", "Height", "Area", "Wirelength", "R", "Cost",
+            "BuildTree_T_us", "SA_T_s", "Feasible"
+        ])
+        for row in table_data:
+            writer.writerow(row)
 
     print(f"\n结果表格已保存到 {results_csv}")
 
     # 统计分析（忽略 None 值）
     stats = {}
-    for col_idx, col_name in enumerate(["Width", "Height", "Area", "Wirelength", "R", "Cost"], start=2):
+    # 在原有 stats 构建循环中加入 Feasible
+    for col_idx, col_name in enumerate([
+        "Width", "Height", "Area", "Wirelength", "R", "Cost",
+        "BuildTree_T_us", "SA_T_s", "Feasible"
+    ], start=2):
         values = [row[col_idx] for row in table_data if row[col_idx] is not None]
         if values:
             mean_val = statistics.mean(values)
@@ -258,6 +287,7 @@ def main():
             stats[col_name] = (mean_val, variance_val)
         else:
             stats[col_name] = (None, None)
+
 
     # 输出统计信息到控制台和日志文件
     print("\n========== 统计结果 ==========")
@@ -268,6 +298,15 @@ def main():
             print(f"{name:<12} {mean_val:<15.4f} {var_val:<15.4f}")
         else:
             print(f"{name:<12} {'无有效数据':<15} {'无有效数据':<15}")
+
+    #寻找可行解
+    feasible_values = [row[-1] for row in table_data if row[-1] is not None]
+    if feasible_values:
+            found_count = sum(feasible_values)  # 因为 Feasible=1 表示 found
+            not_found_count = len(feasible_values) - found_count
+    else:
+        found_count = None   
+        not_found_count = None     
 
     # 附加统计信息到日志文件末尾
     with open(log_file, "a") as lf:
@@ -280,7 +319,9 @@ def main():
                 lf.write(f"{name:<12} {mean_val:<15.4f} {var_val:<15.4f}\n")
             else:
                 lf.write(f"{name:<12} {'无有效数据':<15} {'无有效数据':<15}\n")
-        lf.write(f"结束时间: {datetime.now().strftime('%c')}\n")
+            # 统计可行解数量
+        lf.write(f"可行解统计: found = {found_count}, not found = {not_found_count}\n")
+        lf.write(f"\n结束时间: {datetime.now().strftime('%c')}\n")
         lf.write("=" * 46 + "\n")
 
     print(f"\n完整日志保存在: {log_file}")
