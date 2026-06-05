@@ -16,7 +16,7 @@ struct BiasSelector
     BiasSelector(int N);
     void init(); // 初始化为 1.0
     void update(int i, int j, double delta_cost, double T, bool accepted);
-    std::pair<int, int> selectPair(double T, bool force_random);
+    std::pair<int, int> selectPair(double T);
 };
 
 // 函数声明

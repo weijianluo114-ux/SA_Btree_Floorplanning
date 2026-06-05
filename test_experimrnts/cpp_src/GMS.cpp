@@ -47,7 +47,7 @@ void BiasSelector::update(int i, int j, double delta_cost, double T, bool accept
     }
     else
     {
-        p *= 0.95;
+        p -= eta * reward;
     }
     if (p < PROB_MIN)
         p = PROB_MIN;
@@ -64,18 +64,8 @@ void BiasSelector::update(int i, int j, double delta_cost, double T, bool accept
     total_sum += 2.0 * delta;
 }
 
-pair<int, int> BiasSelector::selectPair(double T, bool force_random)
+pair<int, int> BiasSelector::selectPair(double T)
 {
-    // 强制随机进行选择
-    if (force_random)
-    {
-        int a = rand() % n;
-        int b = rand() % n;
-        while (a == b)
-            b = rand() % n; // 保证不同模块
-        return {a, b};
-    }
-
     // 第一步：按 row_sum 权重选第一个模块 i (轮盘赌 O(n))
     double rand_val = ((double)rand() / RAND_MAX) * total_sum;
     double cum = 0.0;

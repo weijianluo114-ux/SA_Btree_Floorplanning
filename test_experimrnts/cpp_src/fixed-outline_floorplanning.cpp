@@ -1048,14 +1048,14 @@ void SimulatedAnnealing_GMS()
     min_cost_floorplan = hardblocks; // 把当前这一版硬块布局复制到 min_cost_floorplan 里。hardblocks 里存的是每个块当前的坐标、宽高、旋转状态，所以这一步相当于把当前解的具体布局快照保存下来
 
     const double P = 0.95;           // 这是初始接受概率参数。它用于后面计算初始温度 T0，表示希望在一开始对较差解也有较高接受概率。
-    const double r = 0.9;            // 温度衰减系数。每一轮大循环结束后，温度会乘上这个值，也就是 T *= r;，表示逐步降温。
+    const double r = 0.8;            // 温度衰减系数。每一轮大循环结束后，温度会乘上这个值，也就是 T *= r;，表示逐步降温。
     const double epsilon = 0.0001;   // coolest temperature     //注释掉的最小温度阈值。原本可能想用它作为“冷却到某个程度就停止”的条件，但现在没用。
     const double reject_rate = 0.99; // 拒绝率
 
-    const int k = 20;                 // 每个硬块对应的试探次数系数。后面 N = k * num_hardblocks，表示每一轮允许的局部扰动规模和块数成正比。
+    const int k = 40;                 // 每个硬块对应的试探次数系数。后面 N = k * num_hardblocks，表示每一轮允许的局部扰动规模和块数成正比。
     const int N = k * num_hardblocks; // 每一温度下的基础扰动上限
     // 初始温度。这个公式是根据“初始时差解接受概率约为 P”反推出来的。min_cost.cost 越大，初温越高；num_hardblocks 越多，初温也越高。
-    const double T0 = -min_cost.cost * num_hardblocks / log(P);
+    const double T0 = -min_cost.cost * (num_hardblocks / 100) / log(P);
 
     // new-------------------------------------------------
     T = T0; // 当前温度，初始时等于 T0，后面每轮会下降
@@ -1145,12 +1145,12 @@ void SimulatedAnnealing_GMS()
                 else if (op_rand < operation_probs[0] + operation_probs[1])
                 {
                     M = 1; // 交换
-                    tie(a, b) = selector.selectPair(T, false);
+                    tie(a, b) = selector.selectPair(T);
                 }
                 else
                 {
                     M = 2; // 移动
-                    tie(a, b) = selector.selectPair(T, false);
+                    tie(a, b) = selector.selectPair(T);
                     // 移动前需要保证 b 不是 a 的父节点，你在实际执行时处理即可
                     if (btree[a].parent == b)
                     {

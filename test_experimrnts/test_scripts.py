@@ -282,11 +282,15 @@ def main():
         # 曲线模式：可运行多次，使用特殊处理函数
         print("\n曲线记录模式已开启，将运行多次实验并分别保存曲线数据。\n")
         seeds = generate_seeds(args.num_runs)  # 长度为n
+
+        # 曲线结果目录，不存在就创建
+        curve_results_dir = script_dir / "results" / "curve_results" / f"curve_data_{timestamp}"
+        ensure_dir(curve_results_dir)
         
         for run_idx, seed in enumerate(seeds, start=1):
             floorplan_file = output_dir / f"run{run_idx}_{timestamp}.floorplan"
             # 生成曲线 CSV 文件路径（默认放在 output_dir 下，也可自定义）
-            curve_csv_path = script_dir / f"./results/curve_results/curve_data_run{run_idx}_{timestamp}.csv"
+            curve_csv_path = curve_results_dir / f"curve_data_run{run_idx}.csv"
             print(f"[{run_idx}/{args.num_runs}] 运行中 (曲线记录)...")
             output_text, metrics, retcode = run_with_curve_logging(
                 exec_path, hardblocks, nets, terminals,
@@ -390,7 +394,7 @@ def main():
 
     # 输出统计信息到控制台和日志文件
     print("\n========== 统计结果 ==========")
-    print(f"{'指标':<12} {'平均值':<15} {'标准差':<15}")
+    print(f"{'指标':<12}{'平均值':<14}{'标准差':<14}")
     print("-" * 42)
     for name, (mean_val, var_val) in stats.items():
         if mean_val is not None:

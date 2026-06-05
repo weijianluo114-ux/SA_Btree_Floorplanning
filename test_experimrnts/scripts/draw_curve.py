@@ -10,17 +10,60 @@
 import argparse
 import pandas as pd
 import matplotlib.pyplot as plt
-import matplotlib
 from pathlib import Path
 import re
 from datetime import datetime
-import numpy as np
 
 DPI = 300   #全局图像DPI
 
 # 设置中文字体（避免中文标签乱码，可选）
 plt.rcParams['font.sans-serif'] = ['SimHei', 'DejaVu Sans']  # 或 'WenQuanYi Zen Hei'
 plt.rcParams['axes.unicode_minus'] = False
+
+# ---------- 辅助函数 ----------
+def find_latest_csv_dir(results_dir: Path) -> Path:
+    """扫描 curve_results 目录，找到最新生成的子文件夹（基于文件名中的时间戳）"""
+    subdirs = [d for d in results_dir.iterdir() if d.is_dir() and d.name.startswith("curve_data_")]
+    if not subdirs:
+        raise FileNotFoundError(f"在 {results_dir} 中未找到任何 curve_data_* 子文件夹")
+    def extract_timestamp(path: Path) -> datetime:
+        # 文件夹名格式: curve_data_2026-06-04_12:48:28
+        name = path.name
+        parts = name.split('_')
+        if len(parts) >= 3:
+            date_str = '_'.join(parts[2:])  # 2026-06-04_12:48:28
+            return datetime.strptime(date_str, "%Y-%m-%d_%H:%M:%S")
+        else:
+            return datetime.fromtimestamp(path.stat().st_mtime)
+    latest = max(subdirs, key=extract_timestamp)
+    return latest
+
+def process_single_csv(csv_path: Path, output_dir: Path, suffix: str):
+    """处理单个CSV文件，绘制所有曲线，输出到 output_dir"""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    if suffix is None:
+        suffix = csv_path.stem   # 如 "curve_data_run1"
+    print(f"处理 CSV: {csv_path}，输出目录: {output_dir}")
+
+    df = pd.read_csv(csv_path)
+    required_cols = ['width', 'height', 'area', 'wirelength', 'R', 'cost', 'Total_Moves', 'T_Moves', 'T_uphill', 'T_reject', 'T']
+    for col in required_cols:
+        if col not in df.columns:
+            raise ValueError(f"CSV 文件中缺少列: {col}")
+
+    # 1. 单独线性图
+    print("绘制单个指标线性图...")
+    metrics = ['width', 'height', 'area', 'wirelength', 'R', 'cost']
+    for m in metrics:
+        plot_single_metric(df, m, 'Total_Moves', suffix, output_dir, logy=False)
+
+    # 2. 总图（对数Y轴）
+    print("绘制总图（对数Y轴子图）...")
+    plot_all_metrics_subplots(df, 'Total_Moves', suffix, output_dir)
+
+    # 3. 温度行为图
+    print("绘制温度行为图...")
+    plot_temperature_behaviors(df, suffix, output_dir, n_front=50, n_back=70)
 
 def find_latest_csv(results_dir: Path) -> Path:
     """扫描 curve_results 目录，找到最新生成的 CSV 文件（基于文件名中的时间戳）"""
@@ -132,61 +175,79 @@ def plot_temperature_behaviors(df, suffix, output_dir, n_front=5, n_back=5):
         plt.close()
         print(f"已保存: {filepath}")
 
+# ---------- 主函数 ----------
 def main():
-    parser = argparse.ArgumentParser(description="绘制模拟退火曲线")
+    parser = argparse.ArgumentParser(description="批量绘制模拟退火曲线（支持多个run文件）")
     parser.add_argument("--csv", type=str, default=None,
-                        help="CSV 文件路径（若未指定，则自动使用 ./results/curve_results 下的最新文件）")
+                        help="CSV 文件路径 或 包含多个CSV的目录。若为目录，则处理其中所有 curve_data_run*.csv 文件。"
+                             "若未指定，则自动使用 ./results/curve_results 下的最新时间戳文件夹。")
     parser.add_argument("--output_dir", type=str, default=None,
-                        help="图片输出目录（默认 ./results/curve_figures）")
+                        help="图片输出根目录（默认 ./results/curve_figures）。每个run的图片会放在该目录下的子文件夹中。")
     args = parser.parse_args()
 
-    # 确定脚本所在目录
     script_dir = Path(__file__).resolve().parent
-    results_curve_dir = script_dir / "../results/curve_results"
+    results_curve_root = script_dir / "../results/curve_results"
 
-    # 定位 CSV 文件
+    # ----- 确定要处理的CSV文件列表 -----
+    csv_files = []
+    run_ids = []   # 用于命名子文件夹
     if args.csv:
-        csv_path = Path(args.csv)
-        if not csv_path.exists():
-            raise FileNotFoundError(f"指定的 CSV 文件不存在: {csv_path}")
+        path = Path(args.csv)
+        if path.is_file():
+            csv_files = [path]
+            run_ids = [None]   # 后续会尝试从文件名提取
+        elif path.is_dir():
+            files = sorted(path.glob("curve_data_run*.csv"))
+            if not files:
+                raise FileNotFoundError(f"目录 {path} 中没有找到 curve_data_run*.csv 文件")
+            csv_files = files
+            # 提取run编号
+            for f in files:
+                match = re.search(r'run(\d+)', f.stem)
+                run_ids.append(int(match.group(1)) if match else None)
+        else:
+            raise FileNotFoundError(f"路径不存在: {path}")
     else:
-        csv_path = find_latest_csv(results_curve_dir)
-    print(f"读取 CSV: {csv_path}")
+        # 自动查找最新时间戳文件夹
+        latest_dir = find_latest_csv_dir(results_curve_root)
+        print(f"自动选择最新文件夹: {latest_dir}")
+        files = sorted(latest_dir.glob("curve_data_run*.csv"))
+        if not files:
+            raise FileNotFoundError(f"在 {latest_dir} 中没有找到 curve_data_run*.csv 文件")
+        csv_files = files
+        for f in files:
+            match = re.search(r'run(\d+)', f.stem)
+            run_ids.append(int(match.group(1)) if match else None)
 
-    #创建输出文件夹
-    if args.output_dir is None:
-        base_dir = script_dir / "../results/curve_figures"
-        # 使用 CSV 文件名（不含扩展名）作为子文件夹名
-        subfolder_name = csv_path.stem   # 例如 "curve_data_2026-06-04_12:48:28"
-        output_dir = base_dir / subfolder_name
+    # ----- 确定输出根目录 -----
+    if args.output_dir:
+        base_output_dir = Path(args.output_dir)
     else:
-        output_dir = Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+        # 如果用户没有指定输出根目录，则默认为 ./results/curve_figures/
+        # 并且如果当前处理的是自动找到的时间戳文件夹，则在该目录下创建同名子文件夹
+        if 'latest_dir' in locals():
+            base_output_dir = script_dir / "../results/curve_figures" / latest_dir.name
+        else:
+            # 用户指定了单个文件或目录，但没有指定 --output_dir，则直接在 curve_figures 下以CSV文件（或目录）命名
+            if len(csv_files) == 1 and csv_files[0].parent != results_curve_root:
+                # 单个文件，且不在标准位置：使用该文件的父目录名？为简单，直接使用 curve_figures 根目录
+                base_output_dir = script_dir / "../results/curve_figures"
+            else:
+                # 多个文件，或文件位于某个子目录（如最新时间戳文件夹），则使用该子目录名
+                parent_dir = csv_files[0].parent
+                base_output_dir = script_dir / "../results/curve_figures" / parent_dir.name
+    base_output_dir.mkdir(parents=True, exist_ok=True)
 
-    # 读取数据
-    df = pd.read_csv(csv_path)
-    # 确保列存在
-    required_cols = ['width', 'height', 'area', 'wirelength', 'R', 'cost', 'Total_Moves', 'T_Moves', 'T_uphill', 'T_reject', 'T']
-    for col in required_cols:
-        if col not in df.columns:
-            raise ValueError(f"CSV 文件中缺少列: {col}")
-
-    # 生成后缀（基于 CSV 文件名去掉扩展名，保留 curve_data_时间部分）
-    suffix = csv_path.stem  # 直接使用完整文件名作为后缀
-
-    # 1. 单独图（线性Y轴）
-    print("绘制单个指标线性图...")
-    metrics = ['width', 'height', 'area', 'wirelength', 'R', 'cost']
-    for m in metrics:
-        plot_single_metric(df, m, 'Total_Moves', suffix, output_dir, logy=False)
-
-    # 2. 总图（6个子图，对数Y轴）
-    print("绘制总图（对数Y轴子图）...")
-    plot_all_metrics_subplots(df, 'Total_Moves', suffix, output_dir)
-
-    # 3. 温度行为图（前5和后5个非零温度）
-    print("绘制温度行为图...")
-    plot_temperature_behaviors(df, suffix, output_dir, n_front=5, n_back=5)
+    # ----- 逐个处理CSV文件 -----
+    for csv_path, run_id in zip(csv_files, run_ids):
+        # 决定每个run的输出子文件夹
+        if run_id is not None:
+            output_subdir = base_output_dir / f"run{run_id}"
+        else:
+            # 对于没有run编号的文件，使用文件名（不含扩展名）
+            output_subdir = base_output_dir / csv_path.stem
+        # 调用处理函数
+        process_single_csv(csv_path, output_subdir, suffix=csv_path.stem)
 
     print("全部绘图完成！")
 
