@@ -39,6 +39,8 @@ void BiasSelector::update(int i, int j, double delta_cost, double T, bool accept
     const double PROB_MIN = 0.5;
     const double PROB_MAX = 5.0;
 
+    double old_p = p; // 更新后的 p 已经赋值
+
     if (accepted)
     {
         p += eta * (reward - 1.0);
@@ -51,29 +53,20 @@ void BiasSelector::update(int i, int j, double delta_cost, double T, bool accept
         p = PROB_MIN;
     if (p > PROB_MAX)
         p = PROB_MAX;
-    prob[j][i] = p;
+
+    double new_p = p;
+    prob[j][i] = new_p;
 
     // 增量更新 row_sum 和 total_sum
-    double old_p = prob[i][j]; // 更新后的 p 已经赋值
-    // 注意：更新前的 p 值我们不知道，可以计算增量
-    // 更简单方法：重新计算该行的和（O(n)），但只有两行，可接受
-    row_sum[i] = 0.0;
-    for (int k = 0; k < n; ++k)
-        if (k != i)
-            row_sum[i] += prob[i][k];
-    row_sum[j] = 0.0;
-    for (int k = 0; k < n; ++k)
-        if (k != j)
-            row_sum[j] += prob[j][k];
-
-    // 重新计算 total_sum (也可增量，但简单重算 O(n) 也可)
-    total_sum = 0.0;
-    for (int k = 0; k < n; ++k)
-        total_sum += row_sum[k];
+    double delta = new_p - old_p;
+    row_sum[i] += delta;
+    row_sum[j] += delta;
+    total_sum += 2.0 * delta;
 }
 
 pair<int, int> BiasSelector::selectPair(double T, bool force_random)
 {
+    // 强制随机进行选择
     if (force_random)
     {
         int a = rand() % n;

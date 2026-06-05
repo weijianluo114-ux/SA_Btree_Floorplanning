@@ -18,7 +18,12 @@
 
 //------------------------------------------------------//
 
+//---------------------new MACRO------------------------//
 // #define DEBUG 1
+#define CURVE_MODE 0
+#define GMS_MODE 1
+
+//======================================================//
 
 using namespace std;
 
@@ -58,6 +63,13 @@ typedef struct cost
 } Cost;
 
 // 新定义的参数和变量--------------------------------------------------------
+#if CURVE_MODE
+u_int32_t Total_Moves;  // 记录总的扰动次数
+u_int32_t T_Moves = 0;  // 某个温度下已经尝试了多少次移动。通常理解为 move trial count
+u_int32_t T_uphill = 0; // 某个温度下接受了多少次“更差”的解。用于控制当前温度下的搜索强度
+u_int32_t T_reject = 0; // 某个温度下拒绝了多少次“更差”的解。用于控制当前温度下的搜索强度
+#endif
+double T;
 
 //------------------------------------------------------------------------
 
@@ -145,7 +157,7 @@ void ReadHardblocksFile(string hardblocks_file) // 接收参数为文件路径
     area_target = total_block_area * (1 + white_space_ratio);
     W = sqrt(area_target); // total floorplanning region width
 
-    cout << "Area:             " << total_block_area << '\n';
+    cout << "Total Block Area: " << total_block_area << '\n';
     cout << "Target Area:      " << area_target << '\n';
     cout << "W:                " << W << '\n';
     cout << '\n';
@@ -454,30 +466,45 @@ Cost CalculateCost()
         height_penalty = ((double)height / W);
     c.cost = area_cost + wl_cost + R_cost + width_penalty + height_penalty; // 把所有代价项加起来，得到最终总成本。模拟退火后面就是用这个 c.cost 来判断当前布局好不好、要不要接受
 
-    // #ifdef DEBUG
-    //     cout << "Width:      " << c.width << '\n';
-    //     cout << "Height:     " << c.height << '\n';
-    //     cout << "Area:       " << c.area << '\n';
-    //     cout << "Wirelength: " << c.wirelength << '\n';
-    //     cout << "R:          " << c.R << '\n';
-    //     cout << "Cost:       " << area_cost << " + " << wl_cost << " + " << R_cost << " + "
-    //          << width_penalty << " + " << height_penalty << " = " << c.cost << '\n';
-    //     cout << '\n';
-    // #endif
-    // #ifdef DEBUG     //在批量运行的情况下把这个实时查看关闭
-    //     static auto last_update = std::chrono::steady_clock::now();
-    //     auto now = std::chrono::steady_clock::now();
-    //     double elapsed = std::chrono::duration<double>(now - last_update).count();
-    //     if (elapsed >= 1.0)
-    //     {
-    //         std::ostringstream oss;
-    //         oss << "\rCost:" << c.cost << " | Area:" << c.area
-    //             << " | WL:" << c.wirelength << " | W:" << c.width
-    //             << " H:" << c.height << " | R:" << c.R << "          ";
-    //         std::cout << oss.str() << std::flush;
-    //         last_update = now;
-    //     }
-    // #endif
+// #ifdef DEBUG
+//     cout << "Width:      " << c.width << '\n';
+//     cout << "Height:     " << c.height << '\n';
+//     cout << "Area:       " << c.area << '\n';
+//     cout << "Wirelength: " << c.wirelength << '\n';
+//     cout << "R:          " << c.R << '\n';
+//     cout << "Cost:       " << area_cost << " + " << wl_cost << " + " << R_cost << " + "
+//          << width_penalty << " + " << height_penalty << " = " << c.cost << '\n';
+//     cout << '\n';
+// #endif
+// #ifdef DEBUG     //在批量运行的情况下把这个实时查看关闭
+//     static auto last_update = std::chrono::steady_clock::now();
+//     auto now = std::chrono::steady_clock::now();
+//     double elapsed = std::chrono::duration<double>(now - last_update).count();
+//     if (elapsed >= 1.0)
+//     {
+//         std::ostringstream oss;
+//         oss << "\rCost:" << c.cost << " | Area:" << c.area
+//             << " | WL:" << c.wirelength << " | W:" << c.width
+//             << " H:" << c.height << " | R:" << c.R << "          ";
+//         std::cout << oss.str() << std::flush;
+//         last_update = now;
+//     }
+// #endif
+
+// new--------------------------------
+#if CURVE_MODE // 注意，以下会把每一次扰动的结果都记录下来，可能非常耗时
+               // 新增：输出一行 CSV 格式的数据（换行结尾）
+    // 使用 "CSV:" 前缀便于 Python 过滤
+    std::cout << "CSV:"
+              << c.width << "," << c.height << ","
+              << c.area << "," << c.wirelength << ","
+              << c.R << "," << c.cost << ","
+              << Total_Moves << "," << T_Moves << ","
+              << T_uphill << "," << T_reject << ","
+              << T
+              << std::endl;
+#endif
+    // -----------------------------------
 
     return c;
 }
@@ -720,6 +747,12 @@ void SimulatedAnnealing()
     ScopedTimer t("SimulatedAnnealing"); // 记录函数执行时间
 #endif
 
+// new----------------------------------------------
+#if CURVE_MODE
+    Total_Moves = 0;
+#endif
+    // new_end----------------------------------------------
+
     min_cost = CalculateCost();      // 先调用 CalculateCost 计算当前树对应的版图代价、宽高、面积、线长等，并把结果存进min_cost
     min_cost_floorplan = hardblocks; // 把当前这一版硬块布局复制到 min_cost_floorplan 里。hardblocks 里存的是每个块当前的坐标、宽高、旋转状态，所以这一步相当于把当前解的具体布局快照保存下来
 
@@ -733,7 +766,11 @@ void SimulatedAnnealing()
     // 初始温度。这个公式是根据“初始时差解接受概率约为 P”反推出来的。min_cost.cost 越大，初温越高；num_hardblocks 越多，初温也越高。
     const double T0 = -min_cost.cost * num_hardblocks / log(P);
 
-    double T = T0;             // 当前温度，初始时等于 T0，后面每轮会下降
+    // new-------------------------------------------------
+    T = T0; // 当前温度，初始时等于 T0，后面每轮会下降
+    // double operation_probs[3] = {0.1, 0.8, 0.1}; // 旋转, 交换, 移动
+    // new_end----------------------------------------------
+
     int MT = 0;                // 当前温度下已经尝试了多少次移动。通常理解为 move trial count
     int uphill = 0;            // 当前温度下接受了多少次“更差”的解。用于控制当前温度下的搜索强度
     int reject = 0;            // 当前温度下拒绝了多少次候选解。这个变量在这里统计没被接受的操作数
@@ -743,7 +780,7 @@ void SimulatedAnnealing()
     clock_t init_time = clock(); // 记录模拟退火开始时的 CPU 时间，用来算总运行时间
     clock_t time = init_time;    // 记录“上一段计时起点”。后面如果超时但还没找到可行解，会重置这个时间点。
 
-    const int max_seconds = (num_hardblocks / 20) * (num_hardblocks / 20); // 一个按规模变化的阶段时间上限。块越多，这个值越大，允许搜索的单阶段时间越长。
+    const int max_seconds = (num_hardblocks / 10) * (num_hardblocks / 10); // 一个按规模变化的阶段时间上限。块越多，这个值越大，允许搜索的单阶段时间越长。
     // const int max_seconds = 200;     // 一个按规模变化的阶段时间上限。块越多，这个值越大，允许搜索的单阶段时间越长。
     const int TIME_LIMIT = 1200 - 5; // 20 minutes    总运行时间上限，约等于 20 分钟减 5 秒缓冲。避免程序跑太久。
     // 前者用于当前阶段超时判断，后者用于总时长限制
@@ -755,13 +792,67 @@ void SimulatedAnnealing()
         uphill = 0;
         reject = 0;
 
+// new----------------------------------------------
+#if CURVE_MODE
+        T_Moves = 0;
+        T_uphill = 0;
+        T_reject = 0;
+#endif
+        // new_end----------------------------------------------
+
         do
         {
             vector<HardBlock> hardblocks_temp(hardblocks); // 复制当前所有硬块的信息，作为临时备份。里面保存的是每个块当前的坐标、宽高、旋转状态等。
             vector<Node> btree_temp(btree);                // 复制当前 B*-tree 的结构，作为临时备份。里面保存的是每个节点的父子关系。
             int prev_root_block = root_block;              // 记录当前树的根节点编号。因为后面做 Swap 或 Move 时，根节点有可能变化，所以也要单独备份。
 
+            // new----------------------------------------------
+            // double op_rand = (double)rand() / RAND_MAX;
+            // int M;
+            // if (op_rand <= operation_probs[0]) // 旋转操作
+            // {
+            //     // rotate
+            //     M = 0;
+            //     // 随机选一个硬块节点 node，然后调用 Rotate 把它宽高交换，也就是块旋转 90 度。
+            //     int node = rand() % num_hardblocks;
+            //     Rotate(node);
+            // }
+            // else if (op_rand <= operation_probs[0] + operation_probs[1]) // 如果随机数是 1，就做 swap 操作。
+            // {
+            //     // swap
+            //     M = 1;
+            //     int node1, node2;
+            //     // 先随机选 node1，再随机选一个和它不同的 node2，然后调用 Swap 交换这两个节点在树中的位置。
+            //     node1 = rand() % num_hardblocks;
+            //     do
+            //     {
+            //         node2 = rand() % num_hardblocks;
+            //     } while (node2 == node1);
+            //     Swap(node1, node2);
+            // }
+            // else if (op_rand <= operation_probs[0] + operation_probs[1] + operation_probs[2]) // move 操作
+            // {
+            //     M = 2;
+            //     // move
+            //     int node, to_node;
+            //     // 先随机选一个要移动的节点 node，再随机选一个目标节点 to_node，但要保证
+            //     // 这样是为了避免形成非法结构或立即构成环。最后调用 Move 把 node 挂到 to_node 下面。
+            //     node = rand() % num_hardblocks;
+            //     do
+            //     {
+            //         to_node = rand() % num_hardblocks;
+            //     } while (to_node == node || btree[node].parent == to_node); // to_node != node      to_node 不能是 node 的父节点
+            //     Move(node, to_node);
+            // }
+            // else // 这是兜底分支。按理说前面 rand() % 3 只会得到 0、1、2，所以这里不该进来。如果真的进来了，说明逻辑出了意外，程序直接报错退出。
+            // {
+            //     cout << "[Error] Unspecified Move\n";
+            //     exit(1);
+            // }
+            // new_end----------------------------------------------
+
             // 这段是在每一轮扰动里，随机选择一种操作：旋转、交换、移动。它对应模拟退火里的“邻域搜索”。
+
             int M = rand() % 3; // 随机生成一个 0、1 或 2，用来决定这次要做哪一种操作。
             if (M == 0)         // 旋转操作
             {
@@ -801,6 +892,13 @@ void SimulatedAnnealing()
                 exit(1);
             }
 
+            // new----------------------------------------------
+#if CURVE_MODE
+            Total_Moves++; // 实现总次数技计数
+            T_Moves++;
+#endif
+            // new_end----------------------------------------------
+
             MT++;                                                 // 增量计数当前温度层的尝试次数。
             Cost cur_cost = CalculateCost();                      // 计算做完扰动后的当前解代价。
             double delta_cost = cur_cost.cost - prev_cost.cost;   // 计算新解和当前基准解 prev_cost 之间的代价差；正值表示变差（更坏），负值表示变好（更优）。
@@ -808,8 +906,15 @@ void SimulatedAnnealing()
             if (delta_cost <= 0 || random < exp(-delta_cost / T)) // 如果 delta_cost <= 0（变优或相等）或以概率 exp(-delta_cost / T) 接受变差解，则进入接受分支（Metropolis 准则）。
             {
                 if (delta_cost > 0) // 若接受的是变差解（delta_cost > 0），则把 uphill++（记录当前温度下接受更差解的次数）。
+                {
                     uphill++;
 
+                    // new----------------------------------------------
+#if CURVE_MODE
+                    T_uphill++;
+#endif
+                    // new_end----------------------------------------------
+                }
                 // feasible solution with minimum cost
                 if (cur_cost.width <= W && cur_cost.height <= W) // 当 cur_cost.width <= W && cur_cost.height <= W 时视为落入固定外形（feasible）。
                 {
@@ -846,6 +951,12 @@ void SimulatedAnnealing()
             }
             else
             {
+                // new----------------------------------------------
+#if CURVE_MODE
+                T_reject++;
+#endif
+                // new_end----------------------------------------------
+
                 reject++;                     // 增加拒绝计数器（记录本次扰动被拒绝），用于后续停止/统计条件
                 root_block = prev_root_block; // 把根节点恢复到扰动前的值（prev_root_block 在扰动前保存），以撤销可能的根变更
                 if (M == 0)
@@ -914,11 +1025,21 @@ void SimulatedAnnealing_GMS()
 #ifdef DEBUG
     ScopedTimer t("SimulatedAnnealing"); // 记录函数执行时间
 #endif
+    // new----------------------------------------------
+#if CURVE_MODE
+    Total_Moves = 0;
+#endif
+    // new_end----------------------------------------------
+
     //----------------------Guided Move Selection---------------------------//
 
     // 初始化
     BiasSelector selector(num_hardblocks);
-    double operation_probs[3] = {0.2, 0.4, 0.4}; // 旋转, 交换, 移动
+    // double operation_probs[3] = {1.0, 0.0, 0.0}; // 旋转, 交换, 移动
+    // double operation_probs[3] = {0.0, 1.0, 0.0}; // 旋转, 交换, 移动
+    // double operation_probs[3] = {0.0, 0.0, 1.0}; // 旋转, 交换, 移动
+    // double operation_probs[3] = {0.33, 0.34, 0.33}; // 旋转, 交换, 移动
+    double operation_probs[3] = {0.1, 0.8, 0.1}; // 旋转, 交换, 移动
     double bias_explore_ratio = 0.1;             // 以0.1的概率完全随机探索，其余0.9概率使用偏置选择
 
     //----------------------------------------------------------------------//
@@ -936,7 +1057,9 @@ void SimulatedAnnealing_GMS()
     // 初始温度。这个公式是根据“初始时差解接受概率约为 P”反推出来的。min_cost.cost 越大，初温越高；num_hardblocks 越多，初温也越高。
     const double T0 = -min_cost.cost * num_hardblocks / log(P);
 
-    double T = T0;             // 当前温度，初始时等于 T0，后面每轮会下降
+    // new-------------------------------------------------
+    T = T0; // 当前温度，初始时等于 T0，后面每轮会下降
+    // new_end----------------------------------------------
     int MT = 0;                // 当前温度下已经尝试了多少次移动。通常理解为 move trial count
     int uphill = 0;            // 当前温度下接受了多少次“更差”的解。用于控制当前温度下的搜索强度
     int reject = 0;            // 当前温度下拒绝了多少次候选解。这个变量在这里统计没被接受的操作数
@@ -957,6 +1080,14 @@ void SimulatedAnnealing_GMS()
         MT = 0;
         uphill = 0;
         reject = 0;
+
+        // new----------------------------------------------
+#if CURVE_MODE
+        T_Moves = 0;
+        T_uphill = 0;
+        T_reject = 0;
+#endif
+        // new_end----------------------------------------------
 
         do
         {
@@ -1050,6 +1181,13 @@ void SimulatedAnnealing_GMS()
             }
             //-----------------------------------
 
+            // new----------------------------------------------
+#if CURVE_MODE
+            Total_Moves++; // 实现总次数技计数
+            T_Moves++;
+#endif
+            // new_end----------------------------------------------
+
             MT++;                                               // 增量计数当前温度层的尝试次数。
             Cost cur_cost = CalculateCost();                    // 计算做完扰动后的当前解代价。
             double delta_cost = cur_cost.cost - prev_cost.cost; // 计算新解和当前基准解 prev_cost 之间的代价差；正值表示变差（更坏），负值表示变好（更优）。
@@ -1065,7 +1203,15 @@ void SimulatedAnnealing_GMS()
                 //-----------------------------------
 
                 if (delta_cost > 0) // 若接受的是变差解（delta_cost > 0），则把 uphill++（记录当前温度下接受更差解的次数）。
+                {
                     uphill++;
+
+                    // new----------------------------------------------
+#if CURVE_MODE
+                    T_uphill++;
+#endif
+                    // new_end----------------------------------------------
+                }
 
                 // feasible solution with minimum cost
                 if (cur_cost.width <= W && cur_cost.height <= W) // 当 cur_cost.width <= W && cur_cost.height <= W 时视为落入固定外形（feasible）。
@@ -1105,7 +1251,11 @@ void SimulatedAnnealing_GMS()
             {
                 // new--------------------------------
                 accepted = false;
+#if CURVE_MODE
+                T_reject++;
+#endif
                 //-----------------------------------
+
                 reject++;                     // 增加拒绝计数器（记录本次扰动被拒绝），用于后续停止/统计条件
                 root_block = prev_root_block; // 把根节点恢复到扰动前的值（prev_root_block 在扰动前保存），以撤销可能的根变更
                 if (M == 0)
@@ -1259,11 +1409,14 @@ int main(int argc, char **argv)
     cout << "Random seed: " << seed << "\n\n";
 
     BuildInitBtree(); // 随机化建立树
-    // InitBtree();
+// InitBtree();
 
-    // 模拟退火
-    // SimulatedAnnealing_GMS();
+// 模拟退火
+#if GMS_MODE
+    SimulatedAnnealing_GMS();
+#else
     SimulatedAnnealing();
+#endif
 
     // 输出文件
     if (in_fixed_outline)

@@ -44,6 +44,8 @@ def parse_args():
                         help="结果表格 CSV 文件路径")
     parser.add_argument("--skip_make", action="store_true",
                         help="跳过 make 编译步骤")
+    parser.add_argument("--record_curve", action="store_true",
+                    help="记录模拟退火过程中的详细参数曲线（仅运行一次实验）")
     return parser.parse_args()
 
 # ---------- 辅助函数 ----------
@@ -75,12 +77,18 @@ def generate_seeds(num_runs: int) -> List[int]:
         seeds.append(seed)
     return seeds
 
+def extract_last(pattern: str, output_text: str):
+    matches = re.findall(pattern, output_text)
+    if not matches:
+        return None
+    return matches[-1]
+
 def parse_output(output_text: str) -> Dict[str, Optional[float]]:
     """
     从程序输出中提取指标，包括耗时和可行解状态。
     返回字典：
         - 数值指标：Width, Height, Area, Wirelength, R, Cost,
-                     BuildTree_T_us, SA_T_s
+                     BTree_T_us, SA_T_s
         - 可行解标记：Feasible (1=找到可行解, 0=未找到)
     """
     # 数值提取模式
@@ -91,22 +99,22 @@ def parse_output(output_text: str) -> Dict[str, Optional[float]]:
         "Wirelength": r"Wirelength:\s+(\d+)",
         "R": r"R:\s+([0-9.]+)",
         "Cost": r"Cost:\s+([0-9.]+)",
-        "BuildTree_T_us": r"\[BuildInitBtree\] 耗时:\s+(\d+)\s*us",
+        "BTree_T_us": r"\[BuildInitBtree\] 耗时:\s+(\d+)\s*us",
         "SA_T_s": r"\[SimulatedAnnealing\] 耗时:\s+([0-9.]+)\s*s",
     }
+    
     result = {}
     for key, pat in patterns.items():
-        match = re.search(pat, output_text)
-        if match:
-            val = match.group(1)
-            if key in ["BuildTree_T_us", "SA_T_s"]:
-                result[key] = float(val)
-            elif '.' in val:
-                result[key] = float(val)
-            else:
-                result[key] = int(val)
-        else:
+        val = extract_last(pat, output_text)
+        if val is None:
             result[key] = None
+            continue
+        if key in ["BTree_T_us", "SA_T_s"]:
+            result[key] = float(val)
+        elif '.' in val:
+            result[key] = float(val)
+        else:
+            result[key] = int(val)
 
     # 检测可行解：出现 "Not Found feasible solution" 则标记为 0，否则为 1
     if re.search(r"Not Found feasible solution", output_text):
@@ -131,10 +139,57 @@ def run_single(exec_path: Path, hardblocks: str, nets: str, terminals: str,
         error_output = f"运行失败: {e}\n"
         return error_output, {}, -1
 
+def run_with_curve_logging(exec_path, hardblocks, nets, terminals, floorplan_file,
+                           ratio, seed, curve_csv_path, log_file_path):
+    """
+    运行一次实验，实时过滤输出：
+    - 以 'CSV:' 开头的行：去掉前缀后写入 curve_csv_path
+    - 其他行：追加到 log_file_path，并收集到 full_output 用于最终解析
+    返回 (full_output, metrics, returncode)
+    """
+    cmd = [str(exec_path), hardblocks, nets, terminals, str(floorplan_file), str(ratio), str(seed)]
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            text=True, bufsize=1)  # 行缓冲
+
+    # 打开曲线 CSV 文件，写入表头
+    with open(curve_csv_path, 'w', newline='') as curve_f:
+        # 根据 C++ 输出字段顺序定义表头（请与 C++ 代码中的输出顺序严格一致）
+        header = "width,height,area,wirelength,R,cost,Total_Moves,T_Moves,T_uphill,T_reject,T"
+        curve_f.write(header + '\n')
+
+        # 收集非 CSV 行（用于最终解析）
+        full_output_lines = []
+        
+        # 逐行读取
+        for line in proc.stdout:
+            if line.startswith("CSV:"):
+                # CSV 数据：去掉前缀，写入曲线文件
+                curve_f.write(line[4:].lstrip())  # line 已包含换行符
+            else:
+                # 非 CSV 行：写入日志文件，同时收集
+                full_output_lines.append(line)
+                with open(log_file_path, "a") as log_f:
+                    log_f.write(line)
+
+        proc.wait()
+        returncode = proc.returncode
+
+    # 将收集的非 CSV 行合并为完整输出，用于解析最终指标
+    full_output = ''.join(full_output_lines)
+    metrics = parse_output(full_output)   # 复用原有的 parse_output 函数
+    return full_output, metrics, returncode
+
 # ---------- 主函数 ----------
 def main():
     args = parse_args()
     script_dir = get_script_dir()
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H:%M:%S")    #时间戳
+
+    if args.record_curve:
+        print(f"曲线模式运行已开启，请注意剩余存储容量！")
+        if (args.num_runs > 10):
+            args.num_runs = 10  #设置运行次数上限
+        
 
     # 补全默认路径（相对于脚本目录）
     exec_path = (script_dir / args.executable).resolve()
@@ -159,7 +214,6 @@ def main():
     ensure_dir(output_dir)
 
     # 日志文件（原始输出）
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
     if args.log_file is None:
         log_file = script_dir / f"./log/running_results_{timestamp}.txt"
     else:
@@ -223,50 +277,95 @@ def main():
     print(f"开始批量测试，日志保存到 {log_file}")
     print(f"结果表格将保存到 {results_csv}")
 
-    # 批量运行
-    for run_idx, seed in enumerate(seeds, start=1):
-        floorplan_file = output_dir / f"run{run_idx}.floorplan"
-        print(f"[{run_idx}/{args.num_runs}] seed={seed} 运行中...")
+    # 批量运行（原逻辑）
+    if args.record_curve:
+        # 曲线模式：可运行多次，使用特殊处理函数
+        print("\n曲线记录模式已开启，将运行多次实验并分别保存曲线数据。\n")
+        seeds = generate_seeds(args.num_runs)  # 长度为n
+        
+        for run_idx, seed in enumerate(seeds, start=1):
+            floorplan_file = output_dir / f"run{run_idx}_{timestamp}.floorplan"
+            # 生成曲线 CSV 文件路径（默认放在 output_dir 下，也可自定义）
+            curve_csv_path = script_dir / f"./results/curve_results/curve_data_run{run_idx}_{timestamp}.csv"
+            print(f"[{run_idx}/{args.num_runs}] 运行中 (曲线记录)...")
+            output_text, metrics, retcode = run_with_curve_logging(
+                exec_path, hardblocks, nets, terminals,
+                floorplan_file, args.white_space_ratio, seed,
+                curve_csv_path, log_file
+            )
+            # 仍然可以收集最终指标到 table_data，以便统计（可选）
+            # 提取指标存入表格
+            row = [
+                run_idx, seed,
+                metrics.get("Width"),
+                metrics.get("Height"),
+                metrics.get("Area"),
+                metrics.get("Wirelength"),
+                metrics.get("R"),
+                metrics.get("Cost"),
+                metrics.get("BTree_T_us"),
+                metrics.get("SA_T_s"),
+                metrics.get("Feasible"),   # 添加可行解标记
+            ]
+            table_data.append(row)
+            
+            # 终端显示进度
+            print(f"[{run_idx}/{args.num_runs}] seed={seed} 完成 (返回码 {retcode})")
 
-        output_text, metrics, retcode = run_single(
-            exec_path, hardblocks, nets, terminals,
-            floorplan_file, args.white_space_ratio, seed
-        )
+            # 附加统计信息到日志文件末尾
 
-        # 记录原始输出到日志
-        with open(log_file, "a") as lf:
-            lf.write("=" * 60 + "\n")
-            lf.write(f" Run {run_idx} / {args.num_runs}  (seed = {seed})\n")
-            lf.write("=" * 60 + "\n")
-            lf.write(output_text)
-            if retcode != 0:
-                lf.write(f"\n[警告] 程序返回非零退出码: {retcode}\n")
-            lf.write("\n")
+            with open(log_file, "a") as lf:
+                lf.write(f"\n{'Run: ':<12}{run_idx}")
+                lf.write(f"\n{'曲线数据已保存至: ':<12}{curve_csv_path}")
+                lf.write(f"\n结束时间: {datetime.now().strftime('%c')}\n")
+                lf.write("=" * 46 + "\n\n")
 
-        # 提取指标存入表格
-        row = [
-            run_idx, seed,
-            metrics.get("Width"),
-            metrics.get("Height"),
-            metrics.get("Area"),
-            metrics.get("Wirelength"),
-            metrics.get("R"),
-            metrics.get("Cost"),
-            metrics.get("BuildTree_T_us"),
-            metrics.get("SA_T_s"),
-            metrics.get("Feasible"),   # 添加可行解标记
-        ]
-        table_data.append(row)
+    else:
+        # 原批量运行逻辑（不变）
+        # 批量运行
+        for run_idx, seed in enumerate(seeds, start=1):
+            floorplan_file = output_dir / f"run{run_idx}.floorplan"
+            print(f"[{run_idx}/{args.num_runs}] seed={seed} 运行中...")
 
-        # 终端显示进度
-        print(f"[{run_idx}/{args.num_runs}] seed={seed} 完成 (返回码 {retcode})")
+            output_text, metrics, retcode = run_single(
+                exec_path, hardblocks, nets, terminals,
+                floorplan_file, args.white_space_ratio, seed
+            )
+
+            # 记录原始输出到日志
+            with open(log_file, "a") as lf:
+                lf.write("=" * 60 + "\n")
+                lf.write(f" Run {run_idx} / {args.num_runs}  (seed = {seed})\n")
+                lf.write("=" * 60 + "\n")
+                lf.write(output_text)
+                if retcode != 0:
+                    lf.write(f"\n[警告] 程序返回非零退出码: {retcode}\n")
+                lf.write("\n")
+
+            # 提取指标存入表格
+            row = [
+                run_idx, seed,
+                metrics.get("Width"),
+                metrics.get("Height"),
+                metrics.get("Area"),
+                metrics.get("Wirelength"),
+                metrics.get("R"),
+                metrics.get("Cost"),
+                metrics.get("BTree_T_us"),
+                metrics.get("SA_T_s"),
+                metrics.get("Feasible"),   # 添加可行解标记
+            ]
+            table_data.append(row)
+
+            # 终端显示进度
+            print(f"[{run_idx}/{args.num_runs}] seed={seed} 完成 (返回码 {retcode})")
 
     # 写入 CSV 表格
     with open(results_csv, "w", newline="") as csvfile:
         writer = csv.writer(csvfile)
         writer.writerow([
             "run", "seed", "Width", "Height", "Area", "Wirelength", "R", "Cost",
-            "BuildTree_T_us", "SA_T_s", "Feasible"
+            "BTree_T_us", "SA_T_s", "Feasible"
         ])
         for row in table_data:
             writer.writerow(row)
@@ -278,12 +377,12 @@ def main():
     # 在原有 stats 构建循环中加入 Feasible
     for col_idx, col_name in enumerate([
         "Width", "Height", "Area", "Wirelength", "R", "Cost",
-        "BuildTree_T_us", "SA_T_s", "Feasible"
+        "BTree_T_us", "SA_T_s", "Feasible"
     ], start=2):
         values = [row[col_idx] for row in table_data if row[col_idx] is not None]
         if values:
             mean_val = statistics.mean(values)
-            variance_val = statistics.variance(values) if len(values) > 1 else 0.0
+            variance_val = statistics.stdev(values) if len(values) > 1 else 0.0
             stats[col_name] = (mean_val, variance_val)
         else:
             stats[col_name] = (None, None)
@@ -291,7 +390,7 @@ def main():
 
     # 输出统计信息到控制台和日志文件
     print("\n========== 统计结果 ==========")
-    print(f"{'指标':<12} {'平均值':<15} {'方差':<15}")
+    print(f"{'指标':<12} {'平均值':<15} {'标准差':<15}")
     print("-" * 42)
     for name, (mean_val, var_val) in stats.items():
         if mean_val is not None:
@@ -310,9 +409,12 @@ def main():
 
     # 附加统计信息到日志文件末尾
     with open(log_file, "a") as lf:
-        lf.write("\n" + "=" * 46 + "\n")
+        if args.record_curve:
+            lf.write("\n========== 最终结果 (曲线模式) ==========\n")
+        else:
+            lf.write("\n" + "=" * 46 + "\n")
         lf.write("统计汇总（基于成功提取的数据）\n")
-        lf.write(f"{'指标':<12} {'平均值':<15} {'方差':<15}\n")
+        lf.write(f"{'指标':<12}{'平均值':<14}{'标准差':<14}\n")
         lf.write("-" * 42 + "\n")
         for name, (mean_val, var_val) in stats.items():
             if mean_val is not None:
