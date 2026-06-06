@@ -26,7 +26,7 @@
 ## 使用示例
 
 ```bash
-# 进入根目录，运行脚本（假设脚本名为 test_scripts.py）
+# 进入根目录(test_experiments)，运行脚本（假设脚本名为 test_scripts.py）
 python test_scripts.py --num_runs 2 --white_space_ratio 0.15
 
 #若要快速进行n次（最多10次）曲线记录实验，则运行以下脚本
@@ -50,7 +50,8 @@ python test_scripts.py \
     --log_file ./log/my_exp.log \
     --seed_file ./seeds/my_seeds.txt \
     --results_csv ./results/my_results.csv \
-    --record_curve
+    --record_curve \
+    -a 0
 ```
 
 ---
@@ -63,3 +64,4 @@ python test_scripts.py \
 - 缺失指标（如程序未输出某行）在 CSV 中为空，统计时自动忽略。
 - 若需进行n次的曲线脚本实验请加上 `--record_curve`参数
 - 曲线脚本实验的实验上限次数为10，以防止输出过大
+- 若需执行不同的算法实验请对 `-a`参数进行填写

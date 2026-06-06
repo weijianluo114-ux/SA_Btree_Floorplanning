@@ -31,15 +31,32 @@ def find_latest_csv_dir(results_dir: Path) -> Path:
     if not subdirs:
         raise FileNotFoundError(f"在 {results_dir} 中未找到任何 curve_data_* 子文件夹")
     def extract_timestamp(path: Path) -> datetime:
-        # 文件夹名格式: curve_data_2026-06-04_12:48:28
+        # 兼容旧格式: curve_data_2026-06-04_12:48:28
+        # 兼容新格式: curve_data_algo0_2026-06-06_20:48:33_algo0
         name = path.name
-        parts = name.split('_')
-        if len(parts) >= 3:
-            date_str = '_'.join(parts[2:])  # 2026-06-04_12:48:28
-            return datetime.strptime(date_str, "%Y-%m-%d_%H:%M:%S")
-        else:
-            return datetime.fromtimestamp(path.stat().st_mtime)
+        m = re.search(r"(\d{4}-\d{2}-\d{2}_\d{2}:\d{2}:\d{2})", name)
+        if m:
+            return datetime.strptime(m.group(1), "%Y-%m-%d_%H:%M:%S")
+        return datetime.fromtimestamp(path.stat().st_mtime)
     latest = max(subdirs, key=extract_timestamp)
+    return latest
+
+def find_latest_csv(results_dir: Path) -> Path:
+    """扫描 curve_results 目录，找到最新生成的 CSV 文件（基于文件名中的时间戳）"""
+    csv_files = list(results_dir.glob("curve_data_*.csv"))
+    if not csv_files:
+        raise FileNotFoundError(f"在 {results_dir} 中未找到任何 curve_data_*.csv 文件")
+    
+    def extract_timestamp(path: Path) -> datetime:
+        # 兼容: curve_data_2026-06-04_12:48:28.csv
+        # 兼容: curve_data_run6_2026-06-04_20:42:11.csv
+        name = path.stem
+        m = re.search(r"(\d{4}-\d{2}-\d{2}_\d{2}:\d{2}:\d{2})", name)
+        if m:
+            return datetime.strptime(m.group(1), "%Y-%m-%d_%H:%M:%S")
+        return datetime.fromtimestamp(path.stat().st_mtime)
+    
+    latest = max(csv_files, key=extract_timestamp)
     return latest
 
 def process_single_csv(csv_path: Path, output_dir: Path, suffix: str, sample_step: int = 100):
@@ -57,11 +74,9 @@ def process_single_csv(csv_path: Path, output_dir: Path, suffix: str, sample_ste
 
     # 1. 单独线性图
     print("绘制单个指标线性图...")
-    metrics = ['width', 'height', 'area', 'wirelength', 'R', 'cost']
+    metrics = ['width', 'height', 'area', 'wirelength', 'R', 'cost', 'T']
     for m in metrics:
         plot_single_metric(df, m, 'Total_Moves', suffix, output_dir, logy=False, sample_step=sample_step)
-    
-    plot_single_metric(df, 'T', 'Total_Moves', suffix, output_dir, logy=True, sample_step=sample_step)
 
     # 2. 总图（对数Y轴）
     print("绘制总图（对数Y轴子图）...")
@@ -70,25 +85,6 @@ def process_single_csv(csv_path: Path, output_dir: Path, suffix: str, sample_ste
     # 3. 温度行为图
     print("绘制温度行为图...")
     plot_temperature_behaviors(df, suffix, output_dir, n_front=2, n_back=2)
-
-def find_latest_csv(results_dir: Path) -> Path:
-    """扫描 curve_results 目录，找到最新生成的 CSV 文件（基于文件名中的时间戳）"""
-    csv_files = list(results_dir.glob("curve_data_*.csv"))
-    if not csv_files:
-        raise FileNotFoundError(f"在 {results_dir} 中未找到任何 curve_data_*.csv 文件")
-    
-    def extract_timestamp(path: Path) -> datetime:
-        # 兼容: curve_data_2026-06-04_12:48:28.csv
-        # 兼容: curve_data_run6_2026-06-04_20:42:11.csv
-        name = path.stem  # e.g. curve_data_run6_2026-06-04_20:42:11
-        m = re.search(r"\d{4}-\d{2}-\d{2}_\d{2}:\d{2}:\d{2}", name)
-        if m:
-            return datetime.strptime(m.group(0), "%Y-%m-%d_%H:%M:%S")
-        # 回退到文件修改时间
-        return datetime.fromtimestamp(path.stat().st_mtime)
-    
-    latest = max(csv_files, key=extract_timestamp)
-    return latest
 
 def plot_single_metric(df, metric, x_col, suffix, output_dir, logy=False, sample_step=100):
     """
