@@ -27,6 +27,44 @@ using namespace std;
 
 //======================================================//
 
+// --------------------- new struct ------------------------//
+//  ========== SA 算法配置 ==========
+struct SA_config
+{
+    double P = 0.95;              // 初始接受概率，用于计算 T0
+    double r = 0.90;              // 温度衰减系数
+    double epsilon = 0.0001;      // 最低温度阈值
+    double reject_rate = 0.99;    // 最大拒绝率
+    int k = 20;                   // 每块试探次数系数 (N = k * num_hardblocks)
+    int max_seconds_divisor = 10; // 阶段超时: max_seconds = (n / divisor)^2
+    int time_limit = 1195;        // 总运行时间上限 (秒)
+    // 操作概率 (当前为均匀 rand()%3，可扩展)
+    // double op_prob[3] = {1.0/3, 1.0/3, 1.0/3};
+};
+
+// ========== GMS 算法配置 ==========
+struct GMS_config
+{
+    // 操作概率
+    double prob_rotate = 0.1; // 旋转操作的概率
+    double prob_swap = 0.8;   // 交换操作的概率
+    double prob_move = 0.1;   // 移动操作的概率
+    // 偏置探索
+    double bias_explore_ratio = 0.1; // 纯随机探索概率
+    // SA 参数
+    double P = 0.95;           // 初始接受概率，用于计算 T0
+    double r = 0.80;           // 温度衰减系数
+    double epsilon = 0.0001;   // 最低温度阈值
+    double reject_rate = 0.99; // 最大拒绝率
+    int k = 40;                // 每块试探次数系数 (N = k * num_hardblocks)
+    // 超时参数
+    int max_seconds_divisor = 20; // 阶段超时: max_seconds = (n / divisor)^2
+    int time_limit = 1195;        // 总运行时间上限 (秒)
+    // T0 公式中的分母 (GMS 特有)
+    int t0_block_divisor = 100; // T0 = -cost * (n / divisor) / log(P)
+};
+//======================================================//
+
 typedef struct hardblock
 {
     int id;
@@ -747,7 +785,7 @@ void Verify(vector<HardBlock> &hb)
     }
 }
 
-void SimulatedAnnealing()
+void SimulatedAnnealing(const SA_config &cfg)
 {
 #ifdef DEBUG
     ScopedTimer t("SimulatedAnnealing"); // 记录函数执行时间
@@ -765,15 +803,20 @@ void SimulatedAnnealing()
     min_cost = CalculateCost();      // 先调用 CalculateCost 计算当前树对应的版图代价、宽高、面积、线长等，并把结果存进min_cost
     min_cost_floorplan = hardblocks; // 把当前这一版硬块布局复制到 min_cost_floorplan 里。hardblocks 里存的是每个块当前的坐标、宽高、旋转状态，所以这一步相当于把当前解的具体布局快照保存下来
 
-    const double P = 0.95;           // 这是初始接受概率参数。它用于后面计算初始温度 T0，表示希望在一开始对较差解也有较高接受概率。
-    const double r = 0.90;           // 温度衰减系数。每一轮大循环结束后，温度会乘上这个值，也就是 T *= r;，表示逐步降温。
-    const double epsilon = 0.0001;   // coolest temperature     //注释掉的最小温度阈值。原本可能想用它作为“冷却到某个程度就停止”的条件，但现在没用。
-    const double reject_rate = 0.99; // 拒绝率
+    const double P = cfg.P;                     // 这是初始接受概率参数。它用于后面计算初始温度 T0，表示希望在一开始对较差解也有较高接受概率。
+    const double r = cfg.r;                     // 温度衰减系数。每一轮大循环结束后，温度会乘上这个值，也就是 T *= r;，表示逐步降温。
+    const double epsilon = cfg.epsilon;         // coolest temperature     //注释掉的最小温度阈值。原本可能想用它作为“冷却到某个程度就停止”的条件，但现在没用。
+    const double reject_rate = cfg.reject_rate; // 拒绝率
 
-    const int k = 20;                 // 每个硬块对应的试探次数系数。后面 N = k * num_hardblocks，表示每一轮允许的局部扰动规模和块数成正比。
+    const int k = cfg.k;              // 每个硬块对应的试探次数系数。后面 N = k * num_hardblocks，表示每一轮允许的局部扰动规模和块数成正比。
     const int N = k * num_hardblocks; // 每一温度下的基础扰动上限
     // 初始温度。这个公式是根据“初始时差解接受概率约为 P”反推出来的。min_cost.cost 越大，初温越高；num_hardblocks 越多，初温也越高。
     const double T0 = -min_cost.cost * num_hardblocks / log(P);
+    const int max_seconds = (num_hardblocks / cfg.max_seconds_divisor) * (num_hardblocks / cfg.max_seconds_divisor); // 一个按规模变化的阶段时间上限。块越多，这个值越大，允许搜索的单阶段时间越长。
+    // const int max_seconds = 200;     // 一个按规模变化的阶段时间上限。块越多，这个值越大，允许搜索的单阶段时间越长。
+    const int TIME_LIMIT = cfg.time_limit; // 20 minutes    总运行时间上限，约等于 20 分钟减 5 秒缓冲。避免程序跑太久。
+    // 前者用于当前阶段超时判断，后者用于总时长限制
+    int seconds = 0, runtime = 0; // seconds 表示自上次 time 起经过了多少秒；runtime 表示从 init_time 开始累计运行了多少秒
 
     // new-------------------------------------------------
     T = T0; // 当前温度，初始时等于 T0，后面每轮会下降
@@ -788,12 +831,6 @@ void SimulatedAnnealing()
 
     clock_t init_time = clock(); // 记录模拟退火开始时的 CPU 时间，用来算总运行时间
     clock_t time = init_time;    // 记录“上一段计时起点”。后面如果超时但还没找到可行解，会重置这个时间点。
-
-    const int max_seconds = (num_hardblocks / 10) * (num_hardblocks / 10); // 一个按规模变化的阶段时间上限。块越多，这个值越大，允许搜索的单阶段时间越长。
-    // const int max_seconds = 200;     // 一个按规模变化的阶段时间上限。块越多，这个值越大，允许搜索的单阶段时间越长。
-    const int TIME_LIMIT = 1200 - 5; // 20 minutes    总运行时间上限，约等于 20 分钟减 5 秒缓冲。避免程序跑太久。
-    // 前者用于当前阶段超时判断，后者用于总时长限制
-    int seconds = 0, runtime = 0; // seconds 表示自上次 time 起经过了多少秒；runtime 表示从 init_time 开始累计运行了多少秒
 
     do
     {
@@ -1041,7 +1078,7 @@ void SimulatedAnnealing()
     }
 }
 
-void SimulatedAnnealing_GMS()
+void SimulatedAnnealing_GMS(const GMS_config &cfg)
 {
 #ifdef DEBUG
     ScopedTimer t("SimulatedAnnealing"); // 记录函数执行时间
@@ -1063,23 +1100,28 @@ void SimulatedAnnealing_GMS()
     // double operation_probs[3] = {0.0, 1.0, 0.0}; // 旋转, 交换, 移动
     // double operation_probs[3] = {0.0, 0.0, 1.0}; // 旋转, 交换, 移动
     // double operation_probs[3] = {0.33, 0.34, 0.33}; // 旋转, 交换, 移动
-    double operation_probs[3] = {0.1, 0.8, 0.1}; // 旋转, 交换, 移动
-    double bias_explore_ratio = 0.1;             // 以0.1的概率完全随机探索，其余0.9概率使用偏置选择
+    double operation_probs[3] = {cfg.prob_rotate, cfg.prob_swap, cfg.prob_move}; // 旋转, 交换, 移动
+    double bias_explore_ratio = cfg.bias_explore_ratio;                          // 以0.1的概率完全随机探索，其余0.9概率使用偏置选择
 
     //----------------------------------------------------------------------//
 
     min_cost = CalculateCost();      // 先调用 CalculateCost 计算当前树对应的版图代价、宽高、面积、线长等，并把结果存进min_cost
     min_cost_floorplan = hardblocks; // 把当前这一版硬块布局复制到 min_cost_floorplan 里。hardblocks 里存的是每个块当前的坐标、宽高、旋转状态，所以这一步相当于把当前解的具体布局快照保存下来
 
-    const double P = 0.95;           // 这是初始接受概率参数。它用于后面计算初始温度 T0，表示希望在一开始对较差解也有较高接受概率。
-    const double r = 0.8;            // 温度衰减系数。每一轮大循环结束后，温度会乘上这个值，也就是 T *= r;，表示逐步降温。
-    const double epsilon = 0.0001;   // coolest temperature     //注释掉的最小温度阈值。原本可能想用它作为“冷却到某个程度就停止”的条件，但现在没用。
-    const double reject_rate = 0.99; // 拒绝率
+    const double P = cfg.P;                     // 这是初始接受概率参数。它用于后面计算初始温度 T0，表示希望在一开始对较差解也有较高接受概率。
+    const double r = cfg.r;                     // 温度衰减系数。每一轮大循环结束后，温度会乘上这个值，也就是 T *= r;，表示逐步降温。
+    const double epsilon = cfg.epsilon;         // coolest temperature     //注释掉的最小温度阈值。原本可能想用它作为“冷却到某个程度就停止”的条件，但现在没用。
+    const double reject_rate = cfg.reject_rate; // 拒绝率
 
-    const int k = 40;                 // 每个硬块对应的试探次数系数。后面 N = k * num_hardblocks，表示每一轮允许的局部扰动规模和块数成正比。
+    const int k = cfg.k;              // 每个硬块对应的试探次数系数。后面 N = k * num_hardblocks，表示每一轮允许的局部扰动规模和块数成正比。
     const int N = k * num_hardblocks; // 每一温度下的基础扰动上限
     // 初始温度。这个公式是根据“初始时差解接受概率约为 P”反推出来的。min_cost.cost 越大，初温越高；num_hardblocks 越多，初温也越高。
-    const double T0 = -min_cost.cost * (num_hardblocks / 100) / log(P);
+    const double T0 = -min_cost.cost * (num_hardblocks / cfg.t0_block_divisor) / log(P);
+    const int max_seconds = (num_hardblocks / cfg.max_seconds_divisor) * (num_hardblocks / cfg.max_seconds_divisor); // 一个按规模变化的阶段时间上限。块越多，这个值越大，允许搜索的单阶段时间越长。
+    // const int max_seconds = 200;     // 一个按规模变化的阶段时间上限。块越多，这个值越大，允许搜索的单阶段时间越长。
+    const int TIME_LIMIT = cfg.time_limit; // 20 minutes    总运行时间上限，约等于 20 分钟减 5 秒缓冲。避免程序跑太久。
+    // 前者用于当前阶段超时判断，后者用于总时长限制
+    int seconds = 0, runtime = 0; // seconds 表示自上次 time 起经过了多少秒；runtime 表示从 init_time 开始累计运行了多少秒
 
     // new-------------------------------------------------
     T = T0; // 当前温度，初始时等于 T0，后面每轮会下降
@@ -1092,12 +1134,6 @@ void SimulatedAnnealing_GMS()
 
     clock_t init_time = clock(); // 记录模拟退火开始时的 CPU 时间，用来算总运行时间
     clock_t time = init_time;    // 记录“上一段计时起点”。后面如果超时但还没找到可行解，会重置这个时间点。
-
-    const int max_seconds = (num_hardblocks / 20) * (num_hardblocks / 20); // 一个按规模变化的阶段时间上限。块越多，这个值越大，允许搜索的单阶段时间越长。
-    // const int max_seconds = 200;     // 一个按规模变化的阶段时间上限。块越多，这个值越大，允许搜索的单阶段时间越长。
-    const int TIME_LIMIT = 1200 - 5; // 20 minutes    总运行时间上限，约等于 20 分钟减 5 秒缓冲。避免程序跑太久。
-    // 前者用于当前阶段超时判断，后者用于总时长限制
-    int seconds = 0, runtime = 0; // seconds 表示自上次 time 起经过了多少秒；runtime 表示从 init_time 开始累计运行了多少秒
 
     do
     {
@@ -1475,6 +1511,10 @@ int main(int argc, char **argv)
     // 4. 显示选择的算法模式（可选）
     cout << "Algorithm mode: " << algo_mode << endl;
 
+    // 创建配置实例（可在未来支持从命令行覆盖）
+    SA_config sa_cfg;
+    GMS_config gms_cfg;
+
     ReadHardblocksFile(hardblocks_file);
     ReadNetsFile(nets_file);
     ReadTerminalsFile(terminals_file);
@@ -1491,13 +1531,13 @@ int main(int argc, char **argv)
     switch (algo_mode)
     {
     case 1:
-        SimulatedAnnealing_GMS();
+        SimulatedAnnealing_GMS(gms_cfg);
         break;
     case 2:
         // FastSA();   // 未来扩展
         break;
     default:
-        SimulatedAnnealing();
+        SimulatedAnnealing(sa_cfg);
         break;
     }
 

@@ -79,6 +79,44 @@ def generate_seeds(num_runs: int) -> List[int]:
         seeds.append(seed)
     return seeds
 
+def compute_five_number_summary(values):
+    """
+    计算五数汇总（剔除 IQR 异常值后）。
+    返回 (min, q1, median, q3, max, 剔除个数)
+    若数据不足则对应值为 None。
+    """
+    if not values or len(values) < 2:
+        return None, None, None, None, None, 0
+    sorted_vals = sorted(values)
+    n = len(sorted_vals)
+
+    def percentile(data, p):
+        """线性插值百分位数"""
+        k = (len(data) - 1) * p / 100.0
+        f = int(k)
+        c = k - f
+        return data[f] * (1 - c) + data[min(f + 1, len(data) - 1)] * c
+
+    q1 = percentile(sorted_vals, 25)
+    q3 = percentile(sorted_vals, 75)
+    iqr = q3 - q1
+    lower = q1 - 1.5 * iqr
+    upper = q3 + 1.5 * iqr
+
+    # 剔除异常值
+    filtered = [v for v in sorted_vals if lower <= v <= upper]
+    n_removed = len(sorted_vals) - len(filtered)
+
+    if not filtered:
+        return None, None, None, None, None, n_removed
+
+    fmin = min(filtered)
+    fmax = max(filtered)
+    fq1 = percentile(filtered, 25)
+    fmed = percentile(filtered, 50)
+    fq3 = percentile(filtered, 75)
+    return fmin, fq1, fmed, fq3, fmax, n_removed
+
 def extract_last(pattern: str, output_text: str):
     matches = re.findall(pattern, output_text)
     if not matches:
@@ -423,13 +461,27 @@ def main():
             stats[col_name] = (None, None)
 
 
-    # 输出统计信息到控制台和日志文件
+    # ---------- 五数汇总 ----------
+    five_stats = {}
+    for col_idx, col_name in enumerate([
+        "Width", "Height", "Area", "Wirelength", "R", "Cost",
+        "BTree_T_us", "SA_T_s", "Feasible"
+    ], start=2):
+        values = [row[col_idx] for row in table_data if row[col_idx] is not None]
+        five_stats[col_name] = compute_five_number_summary(values)
+
+    # 输出统计信息到控制台
     print("\n========== 统计结果 ==========")
-    print(f"{'指标':<12}{'平均值':<14}{'标准差':<14}")
-    print("-" * 42)
+    header = f"{'指标':<11}{'平均值':<14}{'标准差':<13}{'最小值':<11}{'Q1':<13}{'中位数':<11}{'Q3':<11}{'最大值':<12}"
+    print(header)
+    print("-" * 105)
     for name, (mean_val, var_val) in stats.items():
+        fmin, fq1, fmed, fq3, fmax, n_rem = five_stats.get(name, (None,)*6)
         if mean_val is not None:
-            print(f"{name:<12} {mean_val:<15.4f} {var_val:<15.4f}")
+            print(f"{name:<12} {mean_val:<15.4f} {var_val:<15.4f} "
+                  f"{fmin if fmin is not None else '-':<12} {fq1 if fq1 is not None else '-':<12} "
+                  f"{fmed if fmed is not None else '-':<12} {fq3 if fq3 is not None else '-':<12} "
+                  f"{fmax if fmax is not None else '-':<12}")
         else:
             print(f"{name:<12} {'无有效数据':<15} {'无有效数据':<15}")
     print(f"算法模式：{args.algo}\n")
@@ -450,15 +502,18 @@ def main():
             lf.write("\n========== 最终结果 (曲线模式) ==========\n")
         else:
             lf.write("\n======== 最终结果 (批量实验模式) ========\n")
-        lf.write("统计汇总（基于成功提取的数据）\n")
-        lf.write(f"{'指标':<11}{'平均值':<14}{'标准差':<14}\n")
-        lf.write("-" * 42 + "\n")
+        lf.write("统计汇总（剔除 IQR 异常值后）\n")
+        lf.write(f"{'指标':<11}{'平均值':<14}{'标准差':<13}{'最小值':<11}{'Q1':<13}{'中位数':<11}{'Q3':<12}{'最大值':<11}{'剔除':<6}\n")
+        lf.write("-" * 116 + "\n")
         for name, (mean_val, var_val) in stats.items():
+            fmin, fq1, fmed, fq3, fmax, n_rem = five_stats.get(name, (None,)*6)
             if mean_val is not None:
-                lf.write(f"{name:<12} {mean_val:<15.4f} {var_val:<15.4f}\n")
+                lf.write(f"{name:<12} {mean_val:<15.4f} {var_val:<15.4f} "
+                         f"{fmin if fmin is not None else '-':<12} {fq1 if fq1 is not None else '-':<12} "
+                         f"{fmed if fmed is not None else '-':<12} {fq3 if fq3 is not None else '-':<12} "
+                         f"{fmax if fmax is not None else '-':<12} {n_rem:<6}\n")
             else:
                 lf.write(f"{name:<12} {'无有效数据':<15} {'无有效数据':<15}\n")
-            # 统计可行解数量
         lf.write(f"算法模式：{args.algo}\n")
         lf.write(f"可行解统计: found = {found_count}, not found = {not_found_count}\n")
         lf.write(f"\n结束时间: {datetime.now().strftime('%c')}\n")
