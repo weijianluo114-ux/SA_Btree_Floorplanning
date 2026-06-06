@@ -20,7 +20,7 @@
 
 //---------------------new MACRO------------------------//
 // #define DEBUG 1
-#define CURVE_MODE 0
+#define CURVE_MODE 1
 #define GMS_MODE 1
 
 //======================================================//

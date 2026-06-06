@@ -9,8 +9,8 @@
 
 ## 主要功能
 
-1. **自动定位最新 CSV**：扫描 `./results/curve_results/` 目录，根据文件名中的时间戳选择最新生成的数据文件。
-2. **绘制 6 个核心指标**（`width`, `height`, `area`, `wirelength`, `R`, `cost`）随 `Total_Moves` 的变化图：
+1. **自动定位最新 CSV**：扫描 `./results/curve_results/curve_data_Y-M-D_H:M:S` 目录，根据文件名中的时间戳选择最新生成的数据文件。
+2. **绘制 7 个核心指标**（`width`, `height`, `area`, `wirelength`, `R`, `cost`, `T`）随 `Total_Moves` 的变化图：
    - 单独线性坐标图（每个指标一张图）
    - 组合子图（2×3 布局），所有指标使用对数纵轴，便于观察多量纲数据
 3. **温度行为分析**：提取所有非零温度值，绘制前 5 个和后 5 个温度下的 `T_uphill`、`T_reject` 随 `T_Moves` 的变化曲线（每个温度一张图）。
@@ -31,25 +31,25 @@ pip install pandas matplotlib numpy
 
 ```bash
 cd ./scripts
-python plot_curve.py
+python draw_curve.py
 ```
 
 脚本会自动：
 
 - 在 `../results/curve_results/` 目录下寻找所有 `curve_data_*.csv` 文件
 - 根据文件名中的时间戳（如 `2026-06-04_12:48:28`）选择最新文件
-- 将生成的图片保存到 `../results/curve_figures/`
+- 将生成的图片保存到 `../results/curve_results/curve_data_Y-M-D_H:M:S`
 
 ### 2. 指定 CSV 文件
 
 ```bash
-python plot_curve.py --csv /absolute/or/relative/path/to/your_data.csv
+python draw_curve.py --csv /absolute/or/relative/path/to/your_data.csv
 ```
 
 ### 3. 指定图片输出目录
 
 ```bash
-python plot_curve.py --output_dir ./my_figures
+python draw_curve.py --output_dir ./my_figures
 ```
 
 可同时使用 `--csv` 和 `--output-dir`。

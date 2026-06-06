@@ -8,11 +8,15 @@
 """
 
 import argparse
+from matplotlib.colors import Normalize
 import pandas as pd
 import matplotlib.pyplot as plt
 from pathlib import Path
 import re
 from datetime import datetime
+import numpy as np
+from matplotlib.collections import LineCollection
+
 
 DPI = 300   #全局图像DPI
 
@@ -38,7 +42,7 @@ def find_latest_csv_dir(results_dir: Path) -> Path:
     latest = max(subdirs, key=extract_timestamp)
     return latest
 
-def process_single_csv(csv_path: Path, output_dir: Path, suffix: str):
+def process_single_csv(csv_path: Path, output_dir: Path, suffix: str, sample_step: int = 100):
     """处理单个CSV文件，绘制所有曲线，输出到 output_dir"""
     output_dir.mkdir(parents=True, exist_ok=True)
     if suffix is None:
@@ -55,7 +59,9 @@ def process_single_csv(csv_path: Path, output_dir: Path, suffix: str):
     print("绘制单个指标线性图...")
     metrics = ['width', 'height', 'area', 'wirelength', 'R', 'cost']
     for m in metrics:
-        plot_single_metric(df, m, 'Total_Moves', suffix, output_dir, logy=False)
+        plot_single_metric(df, m, 'Total_Moves', suffix, output_dir, logy=False, sample_step=sample_step)
+    
+    plot_single_metric(df, 'T', 'Total_Moves', suffix, output_dir, logy=True, sample_step=sample_step)
 
     # 2. 总图（对数Y轴）
     print("绘制总图（对数Y轴子图）...")
@@ -63,7 +69,7 @@ def process_single_csv(csv_path: Path, output_dir: Path, suffix: str):
 
     # 3. 温度行为图
     print("绘制温度行为图...")
-    plot_temperature_behaviors(df, suffix, output_dir, n_front=50, n_back=70)
+    plot_temperature_behaviors(df, suffix, output_dir, n_front=2, n_back=2)
 
 def find_latest_csv(results_dir: Path) -> Path:
     """扫描 curve_results 目录，找到最新生成的 CSV 文件（基于文件名中的时间戳）"""
@@ -84,37 +90,123 @@ def find_latest_csv(results_dir: Path) -> Path:
     latest = max(csv_files, key=extract_timestamp)
     return latest
 
-def plot_single_metric(df, metric, x_col, suffix, output_dir, logy=False):
-    """绘制单个指标随 Total_Moves 的变化图"""
-    plt.figure(figsize=(10, 6))
-    plt.plot(df[x_col], df[metric], linewidth=1.5)
-    plt.xlabel('Total Moves')
-    plt.ylabel(metric)
-    plt.title(f'{metric} vs Total Moves')
+def plot_single_metric(df, metric, x_col, suffix, output_dir, logy=False, sample_step=100):
+    """
+    绘制单个指标随 Total_Moves 的变化图（曲线图），线段颜色代表温度（对数映射）。
+    过滤温度为零的点，颜色映射范围基于非零温度的最大最小值。
+    """
+    # 采样
+    df_sampled = df.iloc[::sample_step, :].copy()
+    # 过滤温度等于0的行
+    df_sampled = df_sampled[df_sampled['T'] != 0].copy()
+    if df_sampled.empty:
+        print(f"警告: {metric} 无有效非零温度数据，跳过绘图")
+        return
+
+    # 准备数据
+    x = df_sampled[x_col].values
+    y = df_sampled[metric].values
+    T = df_sampled['T'].values
+
+    # 对温度取对数（用于颜色映射），避免零值（已过滤）
+    logT = np.log10(T)
+    vmin_log, vmax_log = logT.min(), logT.max()
+
+    # 构造线段集合：每个线段连接 (x[i], y[i]) 到 (x[i+1], y[i+1])
+    points = np.array([x, y]).T.reshape(-1, 1, 2)
+    segments = np.concatenate([points[:-1], points[1:]], axis=1)
+    # 每段线段的颜色使用该线段起点温度的对数值（或平均）
+    segment_logT = logT[:-1]  # 用起点温度
+
+    # 创建 LineCollection
+    lc = LineCollection(segments, cmap='jet', norm=Normalize(vmin_log, vmax_log))
+    lc.set_array(segment_logT)
+    lc.set_linewidth(1.5)
+
+    plt.figure(figsize=(12, 6))
+    ax = plt.gca()
+    ax.add_collection(lc)
+
+    # 设置坐标轴范围
+    ax.set_xlim(x.min(), x.max())
+    ax.set_ylim(y.min(), y.max())
     if logy:
-        plt.yscale('log')
-    plt.grid(True, alpha=0.3)
-    # 命名：metric_suffix.png
-    filename = f"{metric}_{suffix}.png"
+        ax.set_yscale('log')
+
+    ax.set_xlabel('Total Moves')
+    ax.set_ylabel(metric)
+    ax.set_title(f'{metric} vs Total Moves (line color = log10(T), sampled every {sample_step})')
+    ax.grid(True, alpha=0.3)
+
+    # 添加 colorbar，显示真实温度值
+    cbar = plt.colorbar(lc, ax=ax, ticks=np.linspace(vmin_log, vmax_log, 5))
+    tick_labels = [f'{10**tick:.1e}' for tick in cbar.get_ticks()]
+    cbar.set_ticklabels(tick_labels)
+    cbar.set_label('Temperature T (log scale)')
+
+    filename = f"{metric}_heatmap_{suffix}.png"
     filepath = output_dir / filename
     plt.savefig(filepath, dpi=DPI, bbox_inches='tight')
     plt.close()
     print(f"已保存: {filepath}")
 
-def plot_all_metrics_subplots(df, x_col, suffix, output_dir):
-    """绘制6个指标在同一个图中（2行3列子图），每个子图使用对数Y轴"""
+def plot_all_metrics_subplots(df, x_col, suffix, output_dir, sample_step=100):
+    """
+    绘制6个指标子图（曲线图），线段颜色代表温度（对数映射），过滤零温度。
+    """
+    df_sampled = df.iloc[::sample_step, :].copy()
+    df_sampled = df_sampled[df_sampled['T'] != 0].copy()
+    if df_sampled.empty:
+        print("警告: 无有效非零温度数据，跳过总图")
+        return
+
+    x = df_sampled[x_col].values
+    logT = np.log10(df_sampled['T'].values)
+    vmin_log, vmax_log = logT.min(), logT.max()
+
     metrics = ['width', 'height', 'area', 'wirelength', 'R', 'cost']
-    fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+    fig, axes = plt.subplots(2, 3, figsize=(24, 16))
     axes = axes.flatten()
+
+    # 共享颜色条时，需要收集所有线段对象
+    line_collections = []
+
     for ax, metric in zip(axes, metrics):
-        ax.plot(df[x_col], df[metric], linewidth=1.5)
+        y = df_sampled[metric].values
+        points = np.array([x, y]).T.reshape(-1, 1, 2)
+        segments = np.concatenate([points[:-1], points[1:]], axis=1)
+        segment_logT = logT[:-1]
+
+        lc = LineCollection(segments, cmap='jet', norm=Normalize(vmin_log, vmax_log))
+        lc.set_array(segment_logT)
+        lc.set_linewidth(1.5)
+        ax.add_collection(lc)
+
+        ax.set_xlim(x.min(), x.max())
+        ax.set_ylim(y.min(), y.max())
+        ax.set_yscale('log')
         ax.set_xlabel('Total Moves')
         ax.set_ylabel(metric)
-        ax.set_title(f'{metric} (log scale)')
-        ax.set_yscale('log')
+        ax.set_title(f'{metric} (log scale, color=log10(T))')
         ax.grid(True, alpha=0.3)
-    plt.tight_layout()
-    filename = f"all_metrics_logy_{suffix}.png"
+
+        line_collections.append(lc)
+
+    # 调整子图布局，为右侧 colorbar 预留空间
+    plt.subplots_adjust(right=0.88)  # 右侧留出12%空白
+
+    # 创建专用于 colorbar 的轴（位于右侧，垂直居中）
+    cbar_ax = fig.add_axes((0.90, 0.15, 0.02, 0.7))  # [left, bottom, width, height]
+    cbar = fig.colorbar(line_collections[-1], cax=cbar_ax, ticks=np.linspace(vmin_log, vmax_log, 5))
+    tick_labels = [f'{10**tick:.1e}' for tick in cbar.get_ticks()]
+    cbar.set_ticklabels(tick_labels)
+    cbar.set_label('Temperature T (log scale)')
+
+    # 不要调用 plt.tight_layout()，否则会覆盖手动调整
+    # plt.tight_layout()   # 注释或删除
+
+    # plt.tight_layout()
+    filename = f"all_metrics_heatmap_{suffix}.png"
     filepath = output_dir / filename
     plt.savefig(filepath, dpi=DPI, bbox_inches='tight')
     plt.close()
@@ -183,6 +275,8 @@ def main():
                              "若未指定，则自动使用 ./results/curve_results 下的最新时间戳文件夹。")
     parser.add_argument("--output_dir", type=str, default=None,
                         help="图片输出根目录（默认 ./results/curve_figures）。每个run的图片会放在该目录下的子文件夹中。")
+    parser.add_argument("--sample_step", type=int, default=100,
+                    help="绘图时每多少点采样一次（默认100）")
     args = parser.parse_args()
 
     script_dir = Path(__file__).resolve().parent
@@ -247,7 +341,7 @@ def main():
             # 对于没有run编号的文件，使用文件名（不含扩展名）
             output_subdir = base_output_dir / csv_path.stem
         # 调用处理函数
-        process_single_csv(csv_path, output_subdir, suffix=csv_path.stem)
+        process_single_csv(csv_path, output_subdir, suffix=csv_path.stem, sample_step=args.sample_step)
 
     print("全部绘图完成！")
 
