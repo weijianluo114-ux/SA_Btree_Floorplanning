@@ -74,12 +74,20 @@ cd ./scripts
 python draw_curve.py
 ```
 
+**原算法总图**
+
+![原算法总图](../docs/assets/all_metrics_heatmap_curve_data_run1_algo0.png "原算法总图")
+
 若想要查看具体的布图输出图像，可执行下列脚本
 
 ```bash
 # 批量模式：自动读取 test_100blocks_ratio_0_1_total_1_algo0/ 下的所有 floorplan
 python draw_fixed_outline.py --batch --num_hardblocks 100 --white_space_ratio 0.1 --num_runs 1 -a 0
 ```
+
+原算法布图
+
+![原算法总图](../docs/assets/run1_algo0.png "原算法总图")
 
 #### 2）GMS
 
@@ -101,9 +109,18 @@ cd ./scripts
 python draw_curve.py
 ```
 
+**GMS总图**
+
+![原算法总图](../docs/assets/all_metrics_heatmap_curve_data_run1_algo1.png "原算法总图")
+
 若想要查看具体的布图输出图像，可执行下列脚本
 
 ```bash
 # 批量模式：自动读取 test_100blocks_ratio_0_1_total_1_algo0/ 下的所有 floorplan
 python draw_fixed_outline.py --batch --num_hardblocks 100 --white_space_ratio 0.1 --num_runs 1 -a 1
 ```
+
+**GMS布图**
+
+
+![原算法总图](..test_experimrnts/docs/assets/run1_algo1.png "原算法总图")
