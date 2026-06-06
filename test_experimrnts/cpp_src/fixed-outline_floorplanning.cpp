@@ -19,14 +19,13 @@
 
 //------------------------------------------------------//
 
+using namespace std;
+
 //---------------------new MACRO------------------------//
 // #define DEBUG 1
-#define CURVE_MODE 0
-#define GMS_MODE 0
+#define CURVE_MODE 1
 
 //======================================================//
-
-using namespace std;
 
 typedef struct hardblock
 {
@@ -71,6 +70,9 @@ u_int32_t T_uphill = 0; // 某个温度下接受了多少次“更差”的解�
 u_int32_t T_reject = 0; // 某个温度下拒绝了多少次“更差”的解。用于控制当前温度下的搜索强度
 #endif
 double T;
+
+// 全局控制标志
+bool g_curve_mode = false; // 默认关闭曲线输出
 
 //------------------------------------------------------------------------
 
@@ -496,14 +498,17 @@ Cost CalculateCost()
 #if CURVE_MODE // 注意，以下会把每一次扰动的结果都记录下来，可能非常耗时
                // 新增：输出一行 CSV 格式的数据（换行结尾）
     // 使用 "CSV:" 前缀便于 Python 过滤
-    std::cout << "CSV:"
-              << c.width << "," << c.height << ","
-              << c.area << "," << c.wirelength << ","
-              << c.R << "," << c.cost << ","
-              << Total_Moves << "," << T_Moves << ","
-              << T_uphill << "," << T_reject << ","
-              << T
-              << std::endl;
+    if (g_curve_mode && T != 0)
+    {
+        std::cout << "CSV:"
+                  << c.width << "," << c.height << ","
+                  << c.area << "," << c.wirelength << ","
+                  << c.R << "," << c.cost << ","
+                  << Total_Moves << "," << T_Moves << ","
+                  << T_uphill << "," << T_reject << ","
+                  << T
+                  << std::endl;
+    }
 #endif
     // -----------------------------------
 
@@ -750,7 +755,10 @@ void SimulatedAnnealing()
 
 // new----------------------------------------------
 #if CURVE_MODE
-    Total_Moves = 0;
+    if (g_curve_mode)
+    {
+        Total_Moves = 0;
+    }
 #endif
     // new_end----------------------------------------------
 
@@ -795,9 +803,12 @@ void SimulatedAnnealing()
 
 // new----------------------------------------------
 #if CURVE_MODE
-        T_Moves = 0;
-        T_uphill = 0;
-        T_reject = 0;
+        if (g_curve_mode)
+        {
+            T_Moves = 0;
+            T_uphill = 0;
+            T_reject = 0;
+        }
 #endif
         // new_end----------------------------------------------
 
@@ -895,8 +906,11 @@ void SimulatedAnnealing()
 
             // new----------------------------------------------
 #if CURVE_MODE
-            Total_Moves++; // 实现总次数技计数
-            T_Moves++;
+            if (g_curve_mode)
+            {
+                Total_Moves++; // 实现总次数技计数
+                T_Moves++;
+            }
 #endif
             // new_end----------------------------------------------
 
@@ -912,7 +926,10 @@ void SimulatedAnnealing()
 
                     // new----------------------------------------------
 #if CURVE_MODE
-                    T_uphill++;
+                    if (g_curve_mode)
+                    {
+                        T_uphill++;
+                    }
 #endif
                     // new_end----------------------------------------------
                 }
@@ -954,7 +971,10 @@ void SimulatedAnnealing()
             {
                 // new----------------------------------------------
 #if CURVE_MODE
-                T_reject++;
+                if (g_curve_mode)
+                {
+                    T_reject++;
+                }
 #endif
                 // new_end----------------------------------------------
 
@@ -1028,7 +1048,10 @@ void SimulatedAnnealing_GMS()
 #endif
     // new----------------------------------------------
 #if CURVE_MODE
-    Total_Moves = 0;
+    if (g_curve_mode)
+    {
+        Total_Moves = 0;
+    }
 #endif
     // new_end----------------------------------------------
 
@@ -1084,9 +1107,12 @@ void SimulatedAnnealing_GMS()
 
         // new----------------------------------------------
 #if CURVE_MODE
-        T_Moves = 0;
-        T_uphill = 0;
-        T_reject = 0;
+        if (g_curve_mode)
+        {
+            T_Moves = 0;
+            T_uphill = 0;
+            T_reject = 0;
+        }
 #endif
         // new_end----------------------------------------------
 
@@ -1184,8 +1210,11 @@ void SimulatedAnnealing_GMS()
 
             // new----------------------------------------------
 #if CURVE_MODE
-            Total_Moves++; // 实现总次数技计数
-            T_Moves++;
+            if (g_curve_mode)
+            {
+                Total_Moves++; // 实现总次数技计数
+                T_Moves++;
+            }
 #endif
             // new_end----------------------------------------------
 
@@ -1209,7 +1238,10 @@ void SimulatedAnnealing_GMS()
 
                     // new----------------------------------------------
 #if CURVE_MODE
-                    T_uphill++;
+                    if (g_curve_mode)
+                    {
+                        T_uphill++;
+                    }
 #endif
                     // new_end----------------------------------------------
                 }
@@ -1253,7 +1285,10 @@ void SimulatedAnnealing_GMS()
                 // new--------------------------------
                 accepted = false;
 #if CURVE_MODE
-                T_reject++;
+                if (g_curve_mode)
+                {
+                    T_reject++;
+                }
 #endif
                 //-----------------------------------
 
@@ -1379,6 +1414,7 @@ int main(int argc, char **argv)
 {
     // 默认算法模式
     int algo_mode = 0; // 0: 原始, 1: GMS, ...
+    bool curve_mode = false;
 
     // 1. 扫描所有参数，提取 --algo 或 -a
     vector<string> args; // 存储非选项参数
@@ -1397,11 +1433,19 @@ int main(int argc, char **argv)
                 return 1;
             }
         }
+        else if (strcmp(argv[i], "--curve") == 0 || strcmp(argv[i], "-c") == 0)
+        {
+            curve_mode = true;
+            // 如果希望带参数，如 --curve=1，可另写解析逻辑，这里简单开关
+        }
         else
         {
             args.push_back(argv[i]);
         }
     }
+
+    // 设置全局曲线模式
+    g_curve_mode = curve_mode;
 
     // 2. 检查剩余参数数量 (至少5个: hardblocks, nets, pl, floorplan, ratio)
     if (args.size() < 5)

@@ -45,7 +45,7 @@ def parse_args():
     parser.add_argument("--skip_make", action="store_true",
                         help="跳过 make 编译步骤")
     parser.add_argument("--record_curve", action="store_true",
-                    help="记录模拟退火过程中的详细参数曲线（仅运行一次实验）")
+                    help="记录模拟退火过程中的详细参数曲线")
     parser.add_argument("-a","--algo", type=int, default=0,
                     help="算法模式: 0=原始算法, 1=GMS, 2=... (默认0)")
     return parser.parse_args()
@@ -127,11 +127,15 @@ def parse_output(output_text: str) -> Dict[str, Optional[float]]:
     return result
 
 def run_single(exec_path: Path, hardblocks: str, nets: str, terminals: str,
-               floorplan_file: Path, ratio: float, seed: int, algo:int = 0) -> Tuple[str, Dict[str, Optional[float]], int]:
+               floorplan_file: Path, ratio: float, seed: int, algo:int = 0, curve:bool = False) -> Tuple[str, Dict[str, Optional[float]], int]:
     """
-    运行一次实验，返回 (原始输出, 提取的指标字典, 返回码)
+    运行n次实验，返回 (原始输出, 提取的指标字典, 返回码)
     """
-    cmd = [str(exec_path), "--algo", str(algo), hardblocks, nets, terminals, str(floorplan_file), str(ratio), str(seed)]
+    cmd = [str(exec_path), "--algo", str(algo)]
+    if curve:
+        cmd.append("--curve")
+    cmd.extend([hardblocks, nets, terminals, str(floorplan_file), str(ratio), str(seed)])
+    
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
         output = proc.stdout + proc.stderr
@@ -142,14 +146,18 @@ def run_single(exec_path: Path, hardblocks: str, nets: str, terminals: str,
         return error_output, {}, -1
 
 def run_with_curve_logging(exec_path, hardblocks, nets, terminals, floorplan_file,
-                           ratio, seed, curve_csv_path, log_file_path, algo=0):
+                           ratio, seed, curve_csv_path, log_file_path, algo=0, curve:bool = False):
     """
-    运行一次实验，实时过滤输出：
+    要求 C++ 程序支持 --curve 选项。
+    运行n次实验，实时过滤输出：
     - 以 'CSV:' 开头的行：去掉前缀后写入 curve_csv_path
     - 其他行：追加到 log_file_path，并收集到 full_output 用于最终解析
     返回 (full_output, metrics, returncode)
     """
-    cmd = [str(exec_path), "--algo", str(algo), hardblocks, nets, terminals, str(floorplan_file), str(ratio), str(seed)]
+    cmd = [str(exec_path), "--algo", str(algo)]
+    if curve:
+        cmd.append("--curve")
+    cmd.extend([hardblocks, nets, terminals, str(floorplan_file), str(ratio), str(seed)])
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             text=True, bufsize=1)  # 行缓冲
 
@@ -296,8 +304,9 @@ def main():
             print(f"[{run_idx}/{args.num_runs}] 运行中 (曲线记录)...")
             output_text, metrics, retcode = run_with_curve_logging(
                 exec_path, hardblocks, nets, terminals,
-                floorplan_file, args.white_space_ratio, seed,
-                curve_csv_path, log_file, algo=args.algo   # 新增
+                floorplan_file, args.white_space_ratio, 
+                seed, curve_csv_path, log_file, algo=args.algo, 
+                curve=args.record_curve   # 新增
             )
             # 仍然可以收集最终指标到 table_data，以便统计（可选）
             # 提取指标存入表格
@@ -335,7 +344,8 @@ def main():
 
             output_text, metrics, retcode = run_single(
                 exec_path, hardblocks, nets, terminals,
-                floorplan_file, args.white_space_ratio, seed, algo=args.algo   # 新增
+                floorplan_file, args.white_space_ratio, 
+                seed, algo=args.algo, curve=False   # 批量模式下不输出曲线
             )
 
             # 记录原始输出到日志
