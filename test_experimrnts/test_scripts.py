@@ -46,6 +46,8 @@ def parse_args():
                         help="跳过 make 编译步骤")
     parser.add_argument("--record_curve", action="store_true",
                     help="记录模拟退火过程中的详细参数曲线（仅运行一次实验）")
+    parser.add_argument("-a","--algo", type=int, default=0,
+                    help="算法模式: 0=原始算法, 1=GMS, 2=... (默认0)")
     return parser.parse_args()
 
 # ---------- 辅助函数 ----------
@@ -125,11 +127,11 @@ def parse_output(output_text: str) -> Dict[str, Optional[float]]:
     return result
 
 def run_single(exec_path: Path, hardblocks: str, nets: str, terminals: str,
-               floorplan_file: Path, ratio: float, seed: int) -> Tuple[str, Dict[str, Optional[float]], int]:
+               floorplan_file: Path, ratio: float, seed: int, algo:int = 0) -> Tuple[str, Dict[str, Optional[float]], int]:
     """
     运行一次实验，返回 (原始输出, 提取的指标字典, 返回码)
     """
-    cmd = [str(exec_path), hardblocks, nets, terminals, str(floorplan_file), str(ratio), str(seed)]
+    cmd = [str(exec_path), "--algo", str(algo), hardblocks, nets, terminals, str(floorplan_file), str(ratio), str(seed)]
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
         output = proc.stdout + proc.stderr
@@ -140,14 +142,14 @@ def run_single(exec_path: Path, hardblocks: str, nets: str, terminals: str,
         return error_output, {}, -1
 
 def run_with_curve_logging(exec_path, hardblocks, nets, terminals, floorplan_file,
-                           ratio, seed, curve_csv_path, log_file_path):
+                           ratio, seed, curve_csv_path, log_file_path, algo=0):
     """
     运行一次实验，实时过滤输出：
     - 以 'CSV:' 开头的行：去掉前缀后写入 curve_csv_path
     - 其他行：追加到 log_file_path，并收集到 full_output 用于最终解析
     返回 (full_output, metrics, returncode)
     """
-    cmd = [str(exec_path), hardblocks, nets, terminals, str(floorplan_file), str(ratio), str(seed)]
+    cmd = [str(exec_path), "--algo", str(algo), hardblocks, nets, terminals, str(floorplan_file), str(ratio), str(seed)]
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             text=True, bufsize=1)  # 行缓冲
 
@@ -295,7 +297,7 @@ def main():
             output_text, metrics, retcode = run_with_curve_logging(
                 exec_path, hardblocks, nets, terminals,
                 floorplan_file, args.white_space_ratio, seed,
-                curve_csv_path, log_file
+                curve_csv_path, log_file, algo=args.algo   # 新增
             )
             # 仍然可以收集最终指标到 table_data，以便统计（可选）
             # 提取指标存入表格
@@ -333,7 +335,7 @@ def main():
 
             output_text, metrics, retcode = run_single(
                 exec_path, hardblocks, nets, terminals,
-                floorplan_file, args.white_space_ratio, seed
+                floorplan_file, args.white_space_ratio, seed, algo=args.algo   # 新增
             )
 
             # 记录原始输出到日志
@@ -418,7 +420,7 @@ def main():
         else:
             lf.write("\n" + "=" * 46 + "\n")
         lf.write("统计汇总（基于成功提取的数据）\n")
-        lf.write(f"{'指标':<12}{'平均值':<14}{'标准差':<14}\n")
+        lf.write(f"{'指标':<11}{'平均值':<14}{'标准差':<14}\n")
         lf.write("-" * 42 + "\n")
         for name, (mean_val, var_val) in stats.items():
             if mean_val is not None:
@@ -426,6 +428,7 @@ def main():
             else:
                 lf.write(f"{name:<12} {'无有效数据':<15} {'无有效数据':<15}\n")
             # 统计可行解数量
+        lf.write(f"算法模式：{args.algo}\n")
         lf.write(f"可行解统计: found = {found_count}, not found = {not_found_count}\n")
         lf.write(f"\n结束时间: {datetime.now().strftime('%c')}\n")
         lf.write("=" * 46 + "\n")

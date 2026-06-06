@@ -32,6 +32,12 @@ python test_scripts.py --num_runs 2 --white_space_ratio 0.15
 #若要快速进行n次（最多10次）曲线记录实验，则运行以下脚本
 python test_scripts.py --num_runs 10 --white_space_ratio 0.15 --record_curve
 
+# 若要固定种子则运行以下脚本
+python test_scripts.py --num_runs 30 --white_space_ratio 0.1 --seed_file ./seeds/seeds_30_test1.txt 
+
+# 若要实现不同算法的切换，则使用以下脚本（其中a=0：原始算法；a=1：GMS算法；a>=1目前未使用到，未来可以扩展）
+python test_scripts.py --num_runs 30 --white_space_ratio 0.1  -a 0
+
 # 自定义所有参数
 python test_scripts.py \
     --executable ../bin/hw3_dbg \

@@ -15,13 +15,14 @@
 #include <chrono> // 如果原来没有
 #include <sstream>
 #include <tuple>
+#include <cstring>
 
 //------------------------------------------------------//
 
 //---------------------new MACRO------------------------//
 // #define DEBUG 1
-#define CURVE_MODE 1
-#define GMS_MODE 1
+#define CURVE_MODE 0
+#define GMS_MODE 0
 
 //======================================================//
 
@@ -1376,30 +1377,59 @@ unsigned int GetRandomSeed()
 
 int main(int argc, char **argv)
 {
-    // 首先判断命令行参数是否足够
-    if (argc < 6)
+    // 默认算法模式
+    int algo_mode = 0; // 0: 原始, 1: GMS, ...
+
+    // 1. 扫描所有参数，提取 --algo 或 -a
+    vector<string> args; // 存储非选项参数
+    for (int i = 1; i < argc; i++)
+    {
+        if (strcmp(argv[i], "--algo") == 0 || strcmp(argv[i], "-a") == 0)
+        {
+            if (i + 1 < argc)
+            {
+                algo_mode = atoi(argv[i + 1]);
+                i++; // 跳过值
+            }
+            else
+            {
+                cerr << "错误: --algo 选项需要指定一个整数参数 (0, 1, 2, ...)" << endl;
+                return 1;
+            }
+        }
+        else
+        {
+            args.push_back(argv[i]);
+        }
+    }
+
+    // 2. 检查剩余参数数量 (至少5个: hardblocks, nets, pl, floorplan, ratio)
+    if (args.size() < 5)
     {
         cout << "[Usage]\n";
-        cout << "    ./hw3 <.hardblocks> <.nets> <.pl> <.floorplan> <white_space_ratio>\n";
-        exit(1);
+        cout << "    ./hw3 [--algo N] <.hardblocks> <.nets> <.pl> <.floorplan> <white_space_ratio> [seed]\n";
+        return 1;
     }
-    // 将不同文件的路径存储下来
-    string hardblocks_file = argv[1];
-    string nets_file = argv[2];
-    string terminals_file = argv[3];
-    string floorplan_file = argv[4];
-    white_space_ratio = atof(argv[5]); // 将 C 风格字符串转换为双精度浮点数
+
+    // 3. 按顺序读取固定参数
+    string hardblocks_file = args[0];
+    string nets_file = args[1];
+    string terminals_file = args[2];
+    string floorplan_file = args[3];
+    white_space_ratio = atof(args[4].c_str());
 
     unsigned int seed;
-    if (argc >= 7)
+    if (args.size() >= 6)
     {
-        seed = static_cast<unsigned int>(atoi(argv[6])); // 从外部传入种子
+        seed = static_cast<unsigned int>(atoi(args[5].c_str()));
     }
     else
     {
         seed = GetRandomSeed();
-        // unsigned int seed = time(NULL);
     }
+
+    // 4. 显示选择的算法模式（可选）
+    cout << "Algorithm mode: " << algo_mode << endl;
 
     ReadHardblocksFile(hardblocks_file);
     ReadNetsFile(nets_file);
@@ -1409,14 +1439,23 @@ int main(int argc, char **argv)
     cout << "Random seed: " << seed << "\n\n";
 
     BuildInitBtree(); // 随机化建立树
-// InitBtree();
+    // InitBtree();
 
-// 模拟退火
-#if GMS_MODE
-    SimulatedAnnealing_GMS();
-#else
-    SimulatedAnnealing();
-#endif
+    // 5. 根据模式调用不同算法
+    // 注意：读取文件、构建初始解等公共部分应该提前完成，这里只调用求解函数
+    // 假设读取数据的函数已经调用，或者已经全局可用
+    switch (algo_mode)
+    {
+    case 1:
+        SimulatedAnnealing_GMS();
+        break;
+    case 2:
+        // FastSA();   // 未来扩展
+        break;
+    default:
+        SimulatedAnnealing();
+        break;
+    }
 
     // 输出文件
     if (in_fixed_outline)
