@@ -61,8 +61,23 @@ struct GMS_config
     int max_seconds_divisor = 20; // 阶段超时: max_seconds = (n / divisor)^2
     int time_limit = 1195;        // 总运行时间上限 (秒)
     // T0 公式中的分母 (GMS 特有)
-    double t0_block_divisor = 60.0; // T0 = -cost * (n / divisor) / log(P)
+    double t0_block_divisor = 100.0; // T0 = -cost * (n / divisor) / log(P)
 };
+
+// ========== FastSA 算法配置 ==========
+struct FastSA_config
+{
+    double P = 0.95;                   // 初始接受概率，用于计算 T1
+    double c = 100.0;                  // 论文推荐 c=100
+    int k = 7;                         // 论文推荐 k=7
+    int max_iter = 200000;             // 最大迭代次数（安全上限）
+    int max_consecutive_reject = 5000; // 连续拒绝阈值
+    double min_temp = 1e-9;            // 最低温度阈值
+    int sample_size = 1000;            // 预采样大小
+    double ewma_alpha = 0.1;           // EWMA 平滑系数
+    int max_seconds_divisor = 10;      // 阶段超时: max_seconds = (n / divisor)^2
+};
+
 //======================================================//
 
 typedef struct hardblock
@@ -1410,6 +1425,318 @@ void SimulatedAnnealing_GMS(const GMS_config &cfg)
     }
 }
 
+void FastSA(const FastSA_config &cfg)
+{
+#ifdef DEBUG
+    ScopedTimer t("SimulatedAnnealing");
+#endif
+
+    // new----------------------------------------------
+#if CURVE_MODE
+    if (g_curve_mode)
+    {
+        Total_Moves = 0;
+        T_Moves = 0;
+        T_uphill = 0;
+        T_reject = 0;
+    }
+#endif
+    // new_end----------------------------------------------
+
+    min_cost = CalculateCost();
+    min_cost_floorplan = hardblocks;
+
+    // ==================== FASTSA 参数 ====================
+    const double P = cfg.P;                                        // 初始接受概率
+    const double c = cfg.c;                                        // 论文推荐 c=100
+    const int k = cfg.k;                                           // 论文推荐 k=7
+    const int MAX_ITER = cfg.max_iter;                             // 最大迭代次数（安全上限）
+    const int MAX_CONSECUTIVE_REJECT = cfg.max_consecutive_reject; // 连续拒绝阈值
+    const double MIN_TEMP = cfg.min_temp;                          // 最低温度阈值
+    double alpha = cfg.ewma_alpha;
+    // ====================================================
+
+    // -------------------- 预采样估算 Δavg --------------------
+    vector<HardBlock> hardblocks_bak = hardblocks;
+    vector<Node> btree_bak = btree;
+    int root_block_bak = root_block;
+    Cost min_cost_bak = min_cost;
+
+    double total_uphill = 0.0;
+    int uphill_count = 0;
+    const int SAMPLE_SIZE = cfg.sample_size;
+
+    for (int s = 0; s < SAMPLE_SIZE; ++s)
+    {
+        int M = rand() % 3;
+        if (M == 0)
+        {
+            int node = rand() % num_hardblocks;
+            Rotate(node);
+        }
+        else if (M == 1)
+        {
+            int node1 = rand() % num_hardblocks;
+            int node2;
+            do
+            {
+                node2 = rand() % num_hardblocks;
+            } while (node2 == node1);
+            Swap(node1, node2);
+        }
+        else
+        {
+            int node = rand() % num_hardblocks;
+            int to_node;
+            do
+            {
+                to_node = rand() % num_hardblocks;
+            } while (to_node == node || btree[node].parent == to_node);
+            Move(node, to_node);
+        }
+        Cost cur_cost = CalculateCost();
+        double delta = cur_cost.cost - min_cost.cost;
+        if (delta > 0)
+        {
+            total_uphill += delta;
+            uphill_count++;
+        }
+        // 回滚
+        hardblocks = hardblocks_bak;
+        btree = btree_bak;
+        root_block = root_block_bak;
+        CalculateCost();
+    }
+    double delta_avg = (uphill_count > 0) ? (total_uphill / uphill_count) : 1.0;
+    double T1 = delta_avg / log(P);
+    // ----------------------------------------------------
+
+    // 恢复原始状态
+    hardblocks = hardblocks_bak;
+    btree = btree_bak;
+    root_block = root_block_bak;
+    min_cost = min_cost_bak;
+    CalculateCost();
+
+    // -------------------- FASTSA 主循环 --------------------
+    int iter = 0;                      // 全局迭代计数器
+    double avg_delta_cost = delta_avg; // 平均代价变化（EWMA）
+    // new-------------------------------------------------
+    T = T1; // 当前温度
+    // new_end----------------------------------------------
+    Cost prev_cost = min_cost; // 当前接受解的成本
+    in_fixed_outline = false;
+
+    clock_t start_time = clock(); // 总开始时间（用于输出运行时间）
+    clock_t time = start_time;    // 阶段计时起点（用于超时重启）
+    const int max_seconds = (num_hardblocks / cfg.max_seconds_divisor) * (num_hardblocks / cfg.max_seconds_divisor);
+    int seconds = 0;
+    int consecutive_reject = 0; // 连续拒绝次数
+
+    // 主循环：不设总时间限制，仅靠停止条件退出
+    while (true)
+    {
+        // ---------- 超时重启检测 ----------
+        seconds = (clock() - time) / CLOCKS_PER_SEC;
+        if (seconds >= max_seconds && !in_fixed_outline)
+        {
+            cout << "Overtime " << min_cost.width << " " << min_cost.height << '\n';
+            seconds = 0;
+            time = clock();
+            // 重置 FastSA 状态
+            iter = 0;
+            avg_delta_cost = delta_avg;
+            T = T1;
+            prev_cost = min_cost;
+            consecutive_reject = 0;
+        }
+
+        // 执行一次迭代
+        vector<HardBlock> hardblocks_temp = hardblocks;
+        vector<Node> btree_temp = btree;
+        int prev_root_block = root_block;
+
+        int M = rand() % 3;
+        if (M == 0)
+        {
+            int node = rand() % num_hardblocks;
+            Rotate(node);
+        }
+        else if (M == 1)
+        {
+            int node1 = rand() % num_hardblocks;
+            int node2;
+            do
+            {
+                node2 = rand() % num_hardblocks;
+            } while (node2 == node1);
+            Swap(node1, node2);
+        }
+        else
+        {
+            int node = rand() % num_hardblocks;
+            int to_node;
+            do
+            {
+                to_node = rand() % num_hardblocks;
+            } while (to_node == node || btree[node].parent == to_node);
+            Move(node, to_node);
+        }
+
+        // new----------------------------------------------
+#if CURVE_MODE
+        if (g_curve_mode)
+        {
+            Total_Moves++;
+            T_Moves++;
+        }
+#endif
+        // new_end----------------------------------------------
+
+        Cost cur_cost = CalculateCost();
+        double delta_cost = cur_cost.cost - prev_cost.cost;
+
+        // 更新平均代价变化
+        avg_delta_cost = (1 - alpha) * avg_delta_cost + alpha * fabs(delta_cost);
+
+        // FastSA 动态温度
+        int n = iter + 1;
+        if (n == 1)
+        {
+            T = T1;
+        }
+        else if (n <= k)
+        {
+            T = T1 * avg_delta_cost / (n * c);
+        }
+        else
+        {
+            T = T1 * avg_delta_cost / n;
+        }
+        if (T < MIN_TEMP)
+            T = MIN_TEMP;
+
+        double random = ((double)rand()) / RAND_MAX;
+        if (delta_cost <= 0 || random < exp(-delta_cost / T))
+        {
+            // new----------------------------------------------
+#if CURVE_MODE
+            if (g_curve_mode && delta_cost > 0)
+            {
+                T_uphill++;
+            }
+#endif
+            // new_end----------------------------------------------
+
+            // 接受新解
+            prev_cost = cur_cost;
+            consecutive_reject = 0; // 重置连续拒绝计数
+
+            // 固定外框可行解
+            if (cur_cost.width <= W && cur_cost.height <= W)
+            {
+                if (in_fixed_outline)
+                {
+                    if (cur_cost.cost < min_cost_fixed_outline.cost)
+                    {
+                        min_cost_root_block_fixed_outline = root_block;
+                        min_cost_fixed_outline = cur_cost;
+                        min_cost_floorplan_fixed_outline = hardblocks;
+                        min_cost_btree_fixed_outline = btree;
+                    }
+                }
+                else
+                {
+                    in_fixed_outline = true;
+                    min_cost_root_block_fixed_outline = root_block;
+                    min_cost_fixed_outline = cur_cost;
+                    min_cost_floorplan_fixed_outline = hardblocks;
+                    min_cost_btree_fixed_outline = btree;
+                }
+            }
+
+            // 全局最优解
+            if (cur_cost.cost < min_cost.cost)
+            {
+                min_cost_root_block = root_block;
+                min_cost = cur_cost;
+                min_cost_floorplan = hardblocks;
+                min_cost_btree = btree;
+            }
+        }
+        else
+        {
+            // new----------------------------------------------
+#if CURVE_MODE
+            if (g_curve_mode)
+            {
+                T_reject++;
+            }
+#endif
+            // new_end----------------------------------------------
+
+            // 拒绝：回滚状态
+            consecutive_reject++;
+            root_block = prev_root_block;
+            if (M == 0)
+                hardblocks = hardblocks_temp;
+            else
+                btree = btree_temp;
+            CalculateCost();
+        }
+
+        iter++;
+
+        // ---------- 主动停止条件 ----------
+        // 条件1：连续拒绝次数过多且温度很低（类似原算法的拒绝率很高且温度低）
+        if (consecutive_reject >= MAX_CONSECUTIVE_REJECT && T <= MIN_TEMP)
+        {
+            break;
+        }
+        // 条件2：达到最大迭代次数（安全上限）
+        if (iter >= MAX_ITER)
+        {
+            break;
+        }
+    }
+
+    // 记录总运行时间
+    double runtime = (double)(clock() - start_time) / CLOCKS_PER_SEC;
+    cout << "Total runtime: " << runtime << " seconds" << endl;
+
+    // -------------------- 输出结果（与原代码相同） --------------------
+    if (in_fixed_outline)
+    {
+#ifdef DEBUG
+        std::cout << '\n';
+#endif
+        cout << "Found feasible solution\n";
+        cout << "Width:      " << min_cost_fixed_outline.width << '\n';
+        cout << "Height:     " << min_cost_fixed_outline.height << '\n';
+        cout << "Area:       " << min_cost_fixed_outline.area << '\n';
+        cout << "Wirelength: " << min_cost_fixed_outline.wirelength << '\n';
+        cout << "R:          " << min_cost_fixed_outline.R << '\n';
+        cout << "Cost:       " << min_cost_fixed_outline.cost << '\n';
+        cout << '\n';
+        Verify(min_cost_floorplan_fixed_outline);
+    }
+    else
+    {
+#ifdef DEBUG
+        std::cout << '\n';
+#endif
+        cout << "Not Found feasible solution\n";
+        cout << "Width:      " << min_cost.width << '\n';
+        cout << "Height:     " << min_cost.height << '\n';
+        cout << "Area:       " << min_cost.area << '\n';
+        cout << "Wirelength: " << min_cost.wirelength << '\n';
+        cout << "R:          " << min_cost.R << '\n';
+        cout << "Cost:       " << min_cost.cost << '\n';
+        cout << '\n';
+        Verify(min_cost_floorplan);
+    }
+}
+
 // 这个函数的作用是把当前版图结果写到输出文件里，格式包括总线长和每个硬块的坐标、尺寸、是否旋转
 void OutputFloorplan(string output_file, int wirelength, vector<HardBlock> &hb)
 {
@@ -1523,10 +1850,6 @@ int main(int argc, char **argv)
     // 4. 显示选择的算法模式（可选）
     cout << "Algorithm mode: " << algo_mode << endl;
 
-    // 创建配置实例（可在未来支持从命令行覆盖）
-    SA_config sa_cfg;
-    GMS_config gms_cfg;
-
     ReadHardblocksFile(hardblocks_file);
     ReadNetsFile(nets_file);
     ReadTerminalsFile(terminals_file);
@@ -1542,15 +1865,24 @@ int main(int argc, char **argv)
     // 假设读取数据的函数已经调用，或者已经全局可用
     switch (algo_mode)
     {
-    case 1:
+    case 1: // GMS
+    {
+        GMS_config gms_cfg;
         SimulatedAnnealing_GMS(gms_cfg);
         break;
-    case 2:
-        // FastSA();   // 未来扩展
+    }
+    case 2: // FastSA
+    {
+        FastSA_config fastsa_cfg;
+        FastSA(fastsa_cfg);
         break;
-    default:
+    }
+    default: // 默认算法
+    {
+        SA_config sa_cfg;
         SimulatedAnnealing(sa_cfg);
         break;
+    }
     }
 
     // 输出文件
