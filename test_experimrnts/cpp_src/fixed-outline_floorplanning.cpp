@@ -53,7 +53,7 @@ struct GMS_config
     double bias_explore_ratio = 0.1; // 纯随机探索概率
     // SA 参数
     double P = 0.95;           // 初始接受概率，用于计算 T0
-    double r = 0.80;           // 温度衰减系数
+    double r = 0.8;            // 温度衰减系数
     double epsilon = 0.0001;   // 最低温度阈值
     double reject_rate = 0.99; // 最大拒绝率
     int k = 40;                // 每块试探次数系数 (N = k * num_hardblocks)
@@ -61,7 +61,7 @@ struct GMS_config
     int max_seconds_divisor = 20; // 阶段超时: max_seconds = (n / divisor)^2
     int time_limit = 1195;        // 总运行时间上限 (秒)
     // T0 公式中的分母 (GMS 特有)
-    int t0_block_divisor = 100; // T0 = -cost * (n / divisor) / log(P)
+    double t0_block_divisor = 60.0; // T0 = -cost * (n / divisor) / log(P)
 };
 //======================================================//
 
@@ -386,14 +386,26 @@ void BtreePreorderTraverse(int cur_node, bool left)
     // contour[i] 表示这个 x 位置已经被前面放置的块抬到的最高高度。
     // 这里找出这段区间里的最大轮廓高度，也就是当前块能贴着放下去的最低 y 位置。
     for (int i = x_start; i < x_end; i++)
+    {
+        if (i >= (int)contour.size())
+        {
+            cerr << "contour 越界: i=" << i << ", size=" << contour.size() << endl;
+            contour.resize(i + 1000, 0); // 自动扩展
+        }
         if (contour[i] > y_max)
             y_max = contour[i];
+    }
 
     hardblocks[cur_node].y = y_max; // 把当前块的 y 坐标设为刚刚找到的最大轮廓高度，也就是它实际放置的位置。
 
     y_max += hardblocks[cur_node].height; // 当前块已经放上去了，所以把轮廓线抬高到当前块顶端。
+    // 第二个写循环
     for (int i = x_start; i < x_end; i++)
-        contour[i] = y_max; // 当前块已经放上去了，所以把轮廓线抬高到当前块顶端
+    {
+        if (i >= (int)contour.size())
+            contour.resize(i + 1000, 0);
+        contour[i] = y_max;
+    } // 当前块已经放上去了，所以把轮廓线抬高到当前块顶端
 
     if (btree[cur_node].left_child != -1)
         BtreePreorderTraverse(btree[cur_node].left_child, true); // 如果当前节点还有左孩子，就递归处理左孩子，并传入 true。这表示左孩子要按“放到父块右边”的规则来算坐标。
@@ -404,7 +416,7 @@ void BtreePreorderTraverse(int cur_node, bool left)
 // 把当前的 B*-tree 重新“解码”成具体的版图坐标，也就是把树结构转换成每个硬块的 x、y 位置
 void BtreeToFloorplan()
 {
-    contour = vector<int>(W * 5, 0); // 初始化轮廓线数组。contour[i] 表示 x 位置 i 当前已经被占到的最高 y 值。这里开 W * 5 是给足够大的水平空间，避免越界。
+    contour = vector<int>(max(W * 5, num_hardblocks * 100), 0); // 初始化轮廓线数组。contour[i] 表示 x 位置 i 当前已经被占到的最高 y 值。这里开 W * 5 是给足够大的水平空间，避免越界。
     // 根节点在最左下角
     hardblocks[root_block].x = 0;
     hardblocks[root_block].y = 0;

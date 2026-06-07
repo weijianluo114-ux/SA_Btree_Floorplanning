@@ -4,6 +4,7 @@
 #include <algorithm>
 
 #include "GMS.h"
+#include <iostream>
 
 using namespace std;
 
@@ -36,8 +37,8 @@ void BiasSelector::update(int i, int j, double delta_cost, double T, bool accept
     double &p = prob[i][j];
     double reward = exp(-delta_cost / T);
     const double eta = 0.1;
-    const double PROB_MIN = 0.5;
-    const double PROB_MAX = 5.0;
+    const double PROB_MIN = 0.1;
+    const double PROB_MAX = 10.0;
 
     double old_p = p; // 更新后的 p 已经赋值
 
@@ -59,6 +60,7 @@ void BiasSelector::update(int i, int j, double delta_cost, double T, bool accept
 
     // 增量更新 row_sum 和 total_sum
     double delta = new_p - old_p;
+
     row_sum[i] += delta;
     row_sum[j] += delta;
     total_sum += 2.0 * delta;
@@ -76,7 +78,6 @@ pair<int, int> BiasSelector::selectPair(double T)
         if (cum >= rand_val)
             break;
     }
-
     // 第二步：在第 i 行内，按 prob[i][k] 权重选第二个模块 j (j != i)
     double row_total = row_sum[i];
     rand_val = ((double)rand() / RAND_MAX) * row_total;

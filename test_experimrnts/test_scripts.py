@@ -472,16 +472,16 @@ def main():
 
     # 输出统计信息到控制台
     print("\n========== 统计结果 ==========")
-    header = f"{'指标':<11}{'平均值':<14}{'标准差':<13}{'最小值':<11}{'Q1':<13}{'中位数':<11}{'Q3':<11}{'最大值':<12}"
+    header = f"{'指标':<11}{'平均值':<13}{'标准差':<13}{'最小值':<10}{'Q1':<13}{'中位数':<10}{'Q3':<13}{'最大值':<12}"
     print(header)
     print("-" * 105)
     for name, (mean_val, var_val) in stats.items():
         fmin, fq1, fmed, fq3, fmax, n_rem = five_stats.get(name, (None,)*6)
         if mean_val is not None:
             print(f"{name:<12} {mean_val:<15.4f} {var_val:<15.4f} "
-                  f"{fmin if fmin is not None else '-':<12} {fq1 if fq1 is not None else '-':<12} "
-                  f"{fmed if fmed is not None else '-':<12} {fq3 if fq3 is not None else '-':<12} "
-                  f"{fmax if fmax is not None else '-':<12}")
+                  f"{f'{fmin:.4f}' if fmin is not None else '-':<12} {f'{fq1:.4f}' if fq1 is not None else '-':<12} "
+                  f"{f'{fmed:.4f}' if fmed is not None else '-':<12} {f'{fq3:.4f}' if fq3 is not None else '-':<12} "
+                  f"{f'{fmax:.4f}' if fmax is not None else '-':<12}")
         else:
             print(f"{name:<12} {'无有效数据':<15} {'无有效数据':<15}")
     print(f"算法模式：{args.algo}\n")
@@ -509,9 +509,9 @@ def main():
             fmin, fq1, fmed, fq3, fmax, n_rem = five_stats.get(name, (None,)*6)
             if mean_val is not None:
                 lf.write(f"{name:<12} {mean_val:<15.4f} {var_val:<15.4f} "
-                         f"{fmin if fmin is not None else '-':<12} {fq1 if fq1 is not None else '-':<12} "
-                         f"{fmed if fmed is not None else '-':<12} {fq3 if fq3 is not None else '-':<12} "
-                         f"{fmax if fmax is not None else '-':<12} {n_rem:<6}\n")
+                         f"{f'{fmin:.4f}' if fmin is not None else '-':<12} {f'{fq1:.4f}' if fq1 is not None else '-':<12} "
+                         f"{f'{fmed:.4f}' if fmed is not None else '-':<12} {f'{fq3:.4f}' if fq3 is not None else '-':<12} "
+                         f"{f'{fmax:.4f}' if fmax is not None else '-':<12} {n_rem:<6}\n")
             else:
                 lf.write(f"{name:<12} {'无有效数据':<15} {'无有效数据':<15}\n")
         lf.write(f"算法模式：{args.algo}\n")

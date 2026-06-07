@@ -1,0 +1,3 @@
+prob_rotate,prob_swap,prob_move,bias_explore_ratio,P,r,epsilon,reject_rate,k,max_seconds_divisor,time_limit(s),T0_block_divisor,eta,PRO_MIN,PRO_MAX
+0.1,0.8,0.1,0.1,0.95,0.8,0.0001,0.99,40,20,1195,100,0.1,0.1,10
+,,,,,0.75,,,,,,50,,0.1,10
