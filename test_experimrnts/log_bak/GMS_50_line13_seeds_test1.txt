@@ -1,0 +1,1129 @@
+==============================================
+Batch floorplanning experiment
+Hardblocks: /home/simple/university_study/DaSanXia/EDA/SA_Btree_Floorplanning/test_experimrnts/testcase/n100.hardblocks
+Nets:       /home/simple/university_study/DaSanXia/EDA/SA_Btree_Floorplanning/test_experimrnts/testcase/n100.nets
+Terminals:  /home/simple/university_study/DaSanXia/EDA/SA_Btree_Floorplanning/test_experimrnts/testcase/n100.pl
+Ratio:      0.1
+Runs:       50
+Start time: Mon Jun  8 17:42:38 2026
+==============================================
+
+============================================================
+ Run 1 / 50  (seed = 330131555)
+============================================================
+Algorithm mode: 1
+Total Block Area: 179501
+Target Area:      197451
+W:                444
+
+Random seed: 330131555
+
+[BuildInitBtree] 耗时: 7 us
+
+Found feasible solution
+Width:      442
+Height:     444
+Area:       196248
+Wirelength: 235013
+R:          1.00452
+Cost:       0.61645
+
+[SimulatedAnnealing] 耗时: 11.495330 s
+
+============================================================
+ Run 2 / 50  (seed = 721593276)
+============================================================
+Algorithm mode: 1
+Total Block Area: 179501
+Target Area:      197451
+W:                444
+
+Random seed: 721593276
+
+[BuildInitBtree] 耗时: 7 us
+
+Found feasible solution
+Width:      441
+Height:     441
+Area:       194481
+Wirelength: 231849
+R:          1
+Cost:       0.633199
+
+[SimulatedAnnealing] 耗时: 11.246806 s
+
+============================================================
+ Run 3 / 50  (seed = 1026740032)
+============================================================
+Algorithm mode: 1
+Total Block Area: 179501
+Target Area:      197451
+W:                444
+
+Random seed: 1026740032
+
+[BuildInitBtree] 耗时: 6 us
+
+Not Found feasible solution
+Width:      446
+Height:     436
+Area:       194456
+Wirelength: 233995
+R:          0.977578
+Cost:       1.66718
+
+[SimulatedAnnealing] 耗时: 11.965400 s
+
+============================================================
+ Run 4 / 50  (seed = 932748066)
+============================================================
+Algorithm mode: 1
+Total Block Area: 179501
+Target Area:      197451
+W:                444
+
+Random seed: 932748066
+
+[BuildInitBtree] 耗时: 10 us
+
+Found feasible solution
+Width:      441
+Height:     437
+Area:       192717
+Wirelength: 229472
+R:          0.99093
+Cost:       0.632726
+
+[SimulatedAnnealing] 耗时: 11.004276 s
+
+============================================================
+ Run 5 / 50  (seed = 955824741)
+============================================================
+Algorithm mode: 1
+Total Block Area: 179501
+Target Area:      197451
+W:                444
+
+Random seed: 955824741
+
+[BuildInitBtree] 耗时: 6 us
+
+Found feasible solution
+Width:      444
+Height:     438
+Area:       194472
+Wirelength: 237504
+R:          0.986486
+Cost:       0.626779
+
+[SimulatedAnnealing] 耗时: 11.202839 s
+
+============================================================
+ Run 6 / 50  (seed = 146733220)
+============================================================
+Algorithm mode: 1
+Total Block Area: 179501
+Target Area:      197451
+W:                444
+
+Random seed: 146733220
+
+[BuildInitBtree] 耗时: 95 us
+
+Found feasible solution
+Width:      442
+Height:     440
+Area:       194480
+Wirelength: 235181
+R:          0.995475
+Cost:       0.728418
+
+[SimulatedAnnealing] 耗时: 11.615959 s
+
+============================================================
+ Run 7 / 50  (seed = 57159465)
+============================================================
+Algorithm mode: 1
+Total Block Area: 179501
+Target Area:      197451
+W:                444
+
+Random seed: 57159465
+
+[BuildInitBtree] 耗时: 6 us
+
+Found feasible solution
+Width:      442
+Height:     437
+Area:       193154
+Wirelength: 238904
+R:          0.988688
+Cost:       0.583114
+
+[SimulatedAnnealing] 耗时: 11.425260 s
+
+============================================================
+ Run 8 / 50  (seed = 783485717)
+============================================================
+Algorithm mode: 1
+Total Block Area: 179501
+Target Area:      197451
+W:                444
+
+Random seed: 783485717
+
+[BuildInitBtree] 耗时: 9 us
+
+Not Found feasible solution
+Width:      449
+Height:     439
+Area:       197111
+Wirelength: 234220
+R:          0.977728
+Cost:       1.63877
+
+[SimulatedAnnealing] 耗时: 11.364606 s
+
+============================================================
+ Run 9 / 50  (seed = 937142439)
+============================================================
+Algorithm mode: 1
+Total Block Area: 179501
+Target Area:      197451
+W:                444
+
+Random seed: 937142439
+
+[BuildInitBtree] 耗时: 7 us
+
+Not Found feasible solution
+Width:      443
+Height:     446
+Area:       197578
+Wirelength: 247140
+R:          1.00677
+Cost:       1.74897
+
+[SimulatedAnnealing] 耗时: 11.324837 s
+
+============================================================
+ Run 10 / 50  (seed = 396205002)
+============================================================
+Algorithm mode: 1
+Total Block Area: 179501
+Target Area:      197451
+W:                444
+
+Random seed: 396205002
+
+[BuildInitBtree] 耗时: 7 us
+
+Found feasible solution
+Width:      442
+Height:     439
+Area:       194038
+Wirelength: 229130
+R:          0.993213
+Cost:       0.691117
+
+[SimulatedAnnealing] 耗时: 10.738125 s
+
+============================================================
+ Run 11 / 50  (seed = 230854470)
+============================================================
+Algorithm mode: 1
+Total Block Area: 179501
+Target Area:      197451
+W:                444
+
+Random seed: 230854470
+
+[BuildInitBtree] 耗时: 8 us
+
+Found feasible solution
+Width:      442
+Height:     435
+Area:       192270
+Wirelength: 238694
+R:          0.984163
+Cost:       0.651697
+
+[SimulatedAnnealing] 耗时: 11.130397 s
+
+============================================================
+ Run 12 / 50  (seed = 1018842344)
+============================================================
+Algorithm mode: 1
+Total Block Area: 179501
+Target Area:      197451
+W:                444
+
+Random seed: 1018842344
+
+[BuildInitBtree] 耗时: 7 us
+
+Not Found feasible solution
+Width:      445
+Height:     441
+Area:       196245
+Wirelength: 225689
+R:          0.991011
+Cost:       1.60216
+
+[SimulatedAnnealing] 耗时: 11.367762 s
+
+============================================================
+ Run 13 / 50  (seed = 799341483)
+============================================================
+Algorithm mode: 1
+Total Block Area: 179501
+Target Area:      197451
+W:                444
+
+Random seed: 799341483
+
+[BuildInitBtree] 耗时: 11 us
+
+Not Found feasible solution
+Width:      447
+Height:     432
+Area:       193104
+Wirelength: 242572
+R:          0.966443
+Cost:       1.69723
+
+[SimulatedAnnealing] 耗时: 11.574304 s
+
+============================================================
+ Run 14 / 50  (seed = 666132611)
+============================================================
+Algorithm mode: 1
+Total Block Area: 179501
+Target Area:      197451
+W:                444
+
+Random seed: 666132611
+
+[BuildInitBtree] 耗时: 7 us
+
+Found feasible solution
+Width:      444
+Height:     436
+Area:       193584
+Wirelength: 239965
+R:          0.981982
+Cost:       0.650328
+
+[SimulatedAnnealing] 耗时: 11.119010 s
+
+============================================================
+ Run 15 / 50  (seed = 680829286)
+============================================================
+Algorithm mode: 1
+Total Block Area: 179501
+Target Area:      197451
+W:                444
+
+Random seed: 680829286
+
+[BuildInitBtree] 耗时: 7 us
+
+Found feasible solution
+Width:      442
+Height:     443
+Area:       195806
+Wirelength: 237252
+R:          1.00226
+Cost:       0.665799
+
+[SimulatedAnnealing] 耗时: 11.372940 s
+
+============================================================
+ Run 16 / 50  (seed = 332107375)
+============================================================
+Algorithm mode: 1
+Total Block Area: 179501
+Target Area:      197451
+W:                444
+
+Random seed: 332107375
+
+[BuildInitBtree] 耗时: 5 us
+
+Found feasible solution
+Width:      444
+Height:     441
+Area:       195804
+Wirelength: 224151
+R:          0.993243
+Cost:       0.688259
+
+[SimulatedAnnealing] 耗时: 11.268845 s
+
+============================================================
+ Run 17 / 50  (seed = 662305906)
+============================================================
+Algorithm mode: 1
+Total Block Area: 179501
+Target Area:      197451
+W:                444
+
+Random seed: 662305906
+
+[BuildInitBtree] 耗时: 6 us
+
+Found feasible solution
+Width:      440
+Height:     443
+Area:       194920
+Wirelength: 231044
+R:          1.00682
+Cost:       0.633993
+
+[SimulatedAnnealing] 耗时: 11.518942 s
+
+============================================================
+ Run 18 / 50  (seed = 1037874869)
+============================================================
+Algorithm mode: 1
+Total Block Area: 179501
+Target Area:      197451
+W:                444
+
+Random seed: 1037874869
+
+[BuildInitBtree] 耗时: 6 us
+
+Found feasible solution
+Width:      443
+Height:     438
+Area:       194034
+Wirelength: 232503
+R:          0.988713
+Cost:       0.609624
+
+[SimulatedAnnealing] 耗时: 11.281443 s
+
+============================================================
+ Run 19 / 50  (seed = 592146573)
+============================================================
+Algorithm mode: 1
+Total Block Area: 179501
+Target Area:      197451
+W:                444
+
+Random seed: 592146573
+
+[BuildInitBtree] 耗时: 7 us
+
+Found feasible solution
+Width:      443
+Height:     443
+Area:       196249
+Wirelength: 239996
+R:          1
+Cost:       0.627588
+
+[SimulatedAnnealing] 耗时: 10.941846 s
+
+============================================================
+ Run 20 / 50  (seed = 771965986)
+============================================================
+Algorithm mode: 1
+Total Block Area: 179501
+Target Area:      197451
+W:                444
+
+Random seed: 771965986
+
+[BuildInitBtree] 耗时: 7 us
+
+Not Found feasible solution
+Width:      446
+Height:     440
+Area:       196240
+Wirelength: 235733
+R:          0.986547
+Cost:       1.57068
+
+[SimulatedAnnealing] 耗时: 11.096042 s
+
+============================================================
+ Run 21 / 50  (seed = 89704921)
+============================================================
+Algorithm mode: 1
+Total Block Area: 179501
+Target Area:      197451
+W:                444
+
+Random seed: 89704921
+
+[BuildInitBtree] 耗时: 7 us
+
+Found feasible solution
+Width:      442
+Height:     441
+Area:       194922
+Wirelength: 237286
+R:          0.997738
+Cost:       0.654926
+
+[SimulatedAnnealing] 耗时: 11.049136 s
+
+============================================================
+ Run 22 / 50  (seed = 808532623)
+============================================================
+Algorithm mode: 1
+Total Block Area: 179501
+Target Area:      197451
+W:                444
+
+Random seed: 808532623
+
+[BuildInitBtree] 耗时: 7 us
+
+Found feasible solution
+Width:      444
+Height:     440
+Area:       195360
+Wirelength: 234241
+R:          0.990991
+Cost:       0.634487
+
+[SimulatedAnnealing] 耗时: 11.336791 s
+
+============================================================
+ Run 23 / 50  (seed = 652420397)
+============================================================
+Algorithm mode: 1
+Total Block Area: 179501
+Target Area:      197451
+W:                444
+
+Random seed: 652420397
+
+[BuildInitBtree] 耗时: 5 us
+
+Not Found feasible solution
+Width:      447
+Height:     432
+Area:       193104
+Wirelength: 235239
+R:          0.966443
+Cost:       1.75733
+
+[SimulatedAnnealing] 耗时: 11.353714 s
+
+============================================================
+ Run 24 / 50  (seed = 9787020)
+============================================================
+Algorithm mode: 1
+Total Block Area: 179501
+Target Area:      197451
+W:                444
+
+Random seed: 9787020
+
+[BuildInitBtree] 耗时: 6 us
+
+Found feasible solution
+Width:      439
+Height:     442
+Area:       194038
+Wirelength: 243775
+R:          1.00683
+Cost:       0.659683
+
+[SimulatedAnnealing] 耗时: 10.757944 s
+
+============================================================
+ Run 25 / 50  (seed = 1011722607)
+============================================================
+Algorithm mode: 1
+Total Block Area: 179501
+Target Area:      197451
+W:                444
+
+Random seed: 1011722607
+
+[BuildInitBtree] 耗时: 6 us
+
+Found feasible solution
+Width:      439
+Height:     440
+Area:       193160
+Wirelength: 232195
+R:          1.00228
+Cost:       0.544603
+
+[SimulatedAnnealing] 耗时: 11.415260 s
+
+============================================================
+ Run 26 / 50  (seed = 702209742)
+============================================================
+Algorithm mode: 1
+Total Block Area: 179501
+Target Area:      197451
+W:                444
+
+Random seed: 702209742
+
+[BuildInitBtree] 耗时: 5 us
+
+Found feasible solution
+Width:      444
+Height:     439
+Area:       194916
+Wirelength: 238846
+R:          0.988739
+Cost:       0.61771
+
+[SimulatedAnnealing] 耗时: 10.980387 s
+
+============================================================
+ Run 27 / 50  (seed = 785198719)
+============================================================
+Algorithm mode: 1
+Total Block Area: 179501
+Target Area:      197451
+W:                444
+
+Random seed: 785198719
+
+[BuildInitBtree] 耗时: 6 us
+
+Found feasible solution
+Width:      444
+Height:     440
+Area:       195360
+Wirelength: 235391
+R:          0.990991
+Cost:       0.620213
+
+[SimulatedAnnealing] 耗时: 11.100445 s
+
+============================================================
+ Run 28 / 50  (seed = 380888905)
+============================================================
+Algorithm mode: 1
+Total Block Area: 179501
+Target Area:      197451
+W:                444
+
+Random seed: 380888905
+
+[BuildInitBtree] 耗时: 7 us
+
+Not Found feasible solution
+Width:      449
+Height:     434
+Area:       194866
+Wirelength: 226089
+R:          0.966592
+Cost:       1.71249
+
+[SimulatedAnnealing] 耗时: 11.557416 s
+
+============================================================
+ Run 29 / 50  (seed = 258865329)
+============================================================
+Algorithm mode: 1
+Total Block Area: 179501
+Target Area:      197451
+W:                444
+
+Random seed: 258865329
+
+[BuildInitBtree] 耗时: 6 us
+
+Found feasible solution
+Width:      444
+Height:     436
+Area:       193584
+Wirelength: 234841
+R:          0.981982
+Cost:       0.571844
+
+[SimulatedAnnealing] 耗时: 11.052480 s
+
+============================================================
+ Run 30 / 50  (seed = 261809563)
+============================================================
+Algorithm mode: 1
+Total Block Area: 179501
+Target Area:      197451
+W:                444
+
+Random seed: 261809563
+
+[BuildInitBtree] 耗时: 7 us
+
+Found feasible solution
+Width:      444
+Height:     439
+Area:       194916
+Wirelength: 238556
+R:          0.988739
+Cost:       0.658329
+
+[SimulatedAnnealing] 耗时: 11.474764 s
+
+============================================================
+ Run 31 / 50  (seed = 223762418)
+============================================================
+Algorithm mode: 1
+Total Block Area: 179501
+Target Area:      197451
+W:                444
+
+Random seed: 223762418
+
+[BuildInitBtree] 耗时: 8 us
+
+Found feasible solution
+Width:      444
+Height:     431
+Area:       191364
+Wirelength: 234785
+R:          0.970721
+Cost:       0.77146
+
+[SimulatedAnnealing] 耗时: 10.938678 s
+
+============================================================
+ Run 32 / 50  (seed = 437010121)
+============================================================
+Algorithm mode: 1
+Total Block Area: 179501
+Target Area:      197451
+W:                444
+
+Random seed: 437010121
+
+[BuildInitBtree] 耗时: 6 us
+
+Found feasible solution
+Width:      443
+Height:     442
+Area:       195806
+Wirelength: 242215
+R:          0.997743
+Cost:       0.704319
+
+[SimulatedAnnealing] 耗时: 11.453704 s
+
+============================================================
+ Run 33 / 50  (seed = 862603311)
+============================================================
+Algorithm mode: 1
+Total Block Area: 179501
+Target Area:      197451
+W:                444
+
+Random seed: 862603311
+
+[BuildInitBtree] 耗时: 8 us
+
+Found feasible solution
+Width:      439
+Height:     439
+Area:       192721
+Wirelength: 235343
+R:          1
+Cost:       0.650854
+
+[SimulatedAnnealing] 耗时: 11.086812 s
+
+============================================================
+ Run 34 / 50  (seed = 614512875)
+============================================================
+Algorithm mode: 1
+Total Block Area: 179501
+Target Area:      197451
+W:                444
+
+Random seed: 614512875
+
+[BuildInitBtree] 耗时: 6 us
+
+Found feasible solution
+Width:      442
+Height:     440
+Area:       194480
+Wirelength: 234394
+R:          0.995475
+Cost:       0.577177
+
+[SimulatedAnnealing] 耗时: 11.484912 s
+
+============================================================
+ Run 35 / 50  (seed = 460554437)
+============================================================
+Algorithm mode: 1
+Total Block Area: 179501
+Target Area:      197451
+W:                444
+
+Random seed: 460554437
+
+[BuildInitBtree] 耗时: 7 us
+
+Found feasible solution
+Width:      442
+Height:     437
+Area:       193154
+Wirelength: 245407
+R:          0.988688
+Cost:       0.708202
+
+[SimulatedAnnealing] 耗时: 11.196187 s
+
+============================================================
+ Run 36 / 50  (seed = 671470275)
+============================================================
+Algorithm mode: 1
+Total Block Area: 179501
+Target Area:      197451
+W:                444
+
+Random seed: 671470275
+
+[BuildInitBtree] 耗时: 8 us
+
+Found feasible solution
+Width:      444
+Height:     443
+Area:       196692
+Wirelength: 238100
+R:          0.997748
+Cost:       0.711021
+
+[SimulatedAnnealing] 耗时: 11.334437 s
+
+============================================================
+ Run 37 / 50  (seed = 395784103)
+============================================================
+Algorithm mode: 1
+Total Block Area: 179501
+Target Area:      197451
+W:                444
+
+Random seed: 395784103
+
+[BuildInitBtree] 耗时: 6 us
+
+Found feasible solution
+Width:      443
+Height:     442
+Area:       195806
+Wirelength: 237496
+R:          0.997743
+Cost:       0.662511
+
+[SimulatedAnnealing] 耗时: 11.472817 s
+
+============================================================
+ Run 38 / 50  (seed = 84286665)
+============================================================
+Algorithm mode: 1
+Total Block Area: 179501
+Target Area:      197451
+W:                444
+
+Random seed: 84286665
+
+[BuildInitBtree] 耗时: 7 us
+
+Found feasible solution
+Width:      443
+Height:     440
+Area:       194920
+Wirelength: 228735
+R:          0.993228
+Cost:       0.632565
+
+[SimulatedAnnealing] 耗时: 11.051822 s
+
+============================================================
+ Run 39 / 50  (seed = 909699125)
+============================================================
+Algorithm mode: 1
+Total Block Area: 179501
+Target Area:      197451
+W:                444
+
+Random seed: 909699125
+
+[BuildInitBtree] 耗时: 5 us
+
+Found feasible solution
+Width:      443
+Height:     443
+Area:       196249
+Wirelength: 244667
+R:          1
+Cost:       0.65952
+
+[SimulatedAnnealing] 耗时: 11.267342 s
+
+============================================================
+ Run 40 / 50  (seed = 1051348552)
+============================================================
+Algorithm mode: 1
+Total Block Area: 179501
+Target Area:      197451
+W:                444
+
+Random seed: 1051348552
+
+[BuildInitBtree] 耗时: 8 us
+
+Found feasible solution
+Width:      443
+Height:     438
+Area:       194034
+Wirelength: 239300
+R:          0.988713
+Cost:       0.692852
+
+[SimulatedAnnealing] 耗时: 11.161339 s
+
+============================================================
+ Run 41 / 50  (seed = 27368808)
+============================================================
+Algorithm mode: 1
+Total Block Area: 179501
+Target Area:      197451
+W:                444
+
+Random seed: 27368808
+
+[BuildInitBtree] 耗时: 6 us
+
+Found feasible solution
+Width:      438
+Height:     434
+Area:       190092
+Wirelength: 237457
+R:          0.990868
+Cost:       0.659468
+
+[SimulatedAnnealing] 耗时: 11.160572 s
+
+============================================================
+ Run 42 / 50  (seed = 403167955)
+============================================================
+Algorithm mode: 1
+Total Block Area: 179501
+Target Area:      197451
+W:                444
+
+Random seed: 403167955
+
+[BuildInitBtree] 耗时: 7 us
+
+Not Found feasible solution
+Width:      446
+Height:     443
+Area:       197578
+Wirelength: 235104
+R:          0.993274
+Cost:       1.73736
+
+[SimulatedAnnealing] 耗时: 11.002114 s
+
+============================================================
+ Run 43 / 50  (seed = 757817621)
+============================================================
+Algorithm mode: 1
+Total Block Area: 179501
+Target Area:      197451
+W:                444
+
+Random seed: 757817621
+
+[BuildInitBtree] 耗时: 8 us
+
+Not Found feasible solution
+Width:      449
+Height:     439
+Area:       197111
+Wirelength: 226731
+R:          0.977728
+Cost:       1.6772
+
+[SimulatedAnnealing] 耗时: 11.459705 s
+
+============================================================
+ Run 44 / 50  (seed = 274933652)
+============================================================
+Algorithm mode: 1
+Total Block Area: 179501
+Target Area:      197451
+W:                444
+
+Random seed: 274933652
+
+[BuildInitBtree] 耗时: 8 us
+
+Not Found feasible solution
+Width:      452
+Height:     435
+Area:       196620
+Wirelength: 233938
+R:          0.962389
+Cost:       1.61908
+
+[SimulatedAnnealing] 耗时: 11.593409 s
+
+============================================================
+ Run 45 / 50  (seed = 1049725645)
+============================================================
+Algorithm mode: 1
+Total Block Area: 179501
+Target Area:      197451
+W:                444
+
+Random seed: 1049725645
+
+[BuildInitBtree] 耗时: 6 us
+
+Found feasible solution
+Width:      444
+Height:     436
+Area:       193584
+Wirelength: 236048
+R:          0.981982
+Cost:       0.575598
+
+[SimulatedAnnealing] 耗时: 11.493075 s
+
+============================================================
+ Run 46 / 50  (seed = 965690931)
+============================================================
+Algorithm mode: 1
+Total Block Area: 179501
+Target Area:      197451
+W:                444
+
+Random seed: 965690931
+
+[BuildInitBtree] 耗时: 8 us
+
+Not Found feasible solution
+Width:      452
+Height:     434
+Area:       196168
+Wirelength: 225768
+R:          0.960177
+Cost:       1.68353
+
+[SimulatedAnnealing] 耗时: 11.328230 s
+
+============================================================
+ Run 47 / 50  (seed = 22263553)
+============================================================
+Algorithm mode: 1
+Total Block Area: 179501
+Target Area:      197451
+W:                444
+
+Random seed: 22263553
+
+[BuildInitBtree] 耗时: 8 us
+
+Not Found feasible solution
+Width:      446
+Height:     436
+Area:       194456
+Wirelength: 230056
+R:          0.977578
+Cost:       1.6735
+
+[SimulatedAnnealing] 耗时: 11.352567 s
+
+============================================================
+ Run 48 / 50  (seed = 285823122)
+============================================================
+Algorithm mode: 1
+Total Block Area: 179501
+Target Area:      197451
+W:                444
+
+Random seed: 285823122
+
+[BuildInitBtree] 耗时: 7 us
+
+Not Found feasible solution
+Width:      452
+Height:     436
+Area:       197072
+Wirelength: 225008
+R:          0.964602
+Cost:       1.69804
+
+[SimulatedAnnealing] 耗时: 11.224734 s
+
+============================================================
+ Run 49 / 50  (seed = 553356719)
+============================================================
+Algorithm mode: 1
+Total Block Area: 179501
+Target Area:      197451
+W:                444
+
+Random seed: 553356719
+
+[BuildInitBtree] 耗时: 6 us
+
+Found feasible solution
+Width:      438
+Height:     438
+Area:       191844
+Wirelength: 233619
+R:          1
+Cost:       0.656412
+
+[SimulatedAnnealing] 耗时: 11.298223 s
+
+============================================================
+ Run 50 / 50  (seed = 622066696)
+============================================================
+Algorithm mode: 1
+Total Block Area: 179501
+Target Area:      197451
+W:                444
+
+Random seed: 622066696
+
+[BuildInitBtree] 耗时: 6 us
+
+Not Found feasible solution
+Width:      448
+Height:     439
+Area:       196672
+Wirelength: 225087
+R:          0.979911
+Cost:       1.70631
+
+[SimulatedAnnealing] 耗时: 11.751149 s
+
+
+======== 最终结果 (批量实验模式) ========
+统计汇总（剔除 IQR 异常值后）
+指标         平均值           标准差          最小值        Q1           中位数        Q3          最大值        剔除    
+--------------------------------------------------------------------------------------------------------------------
+Width        443.9000        3.3274          438.0000     442.0000     443.0000     444.0000     449.0000     3     
+Height       438.7400        3.3674          431.0000     436.0000     439.0000     441.0000     446.0000     0     
+Area         194752.8000     1676.3192       190092.0000  193584.0000  194891.0000  196222.0000  197578.0000  0     
+Wirelength   234914.4800     5550.5340       224151.0000  231935.5000  235142.5000  238442.0000  247140.0000  0     
+R            0.9884          0.0123          0.9602       0.9820       0.9909       0.9977       1.0068       0     
+Cost         0.9571          0.4801          0.5446       0.6328       0.6611       1.6149       1.7573       0     
+BTree_T_us   8.6400          12.5190         5.0000       6.0000       7.0000       7.0000       10.0000      2     
+SA_T_s       11.2849         0.2421          10.7381      11.1051      11.3115      11.4582      11.9654      0     
+Feasible     0.7000          0.4629          0.0000       0.0000       1.0000       1.0000       1.0000       0     
+算法模式：1
+可行解统计: found = 35, not found = 15
+
+结束时间: Mon Jun  8 17:52:02 2026
+==============================================

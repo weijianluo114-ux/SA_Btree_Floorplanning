@@ -1,0 +1,53 @@
+==============================================
+Batch floorplanning experiment
+Hardblocks: /home/simple/university_study/DaSanXia/EDA/SA_Btree_Floorplanning/test_experimrnts/testcase/n100.hardblocks
+Nets:       /home/simple/university_study/DaSanXia/EDA/SA_Btree_Floorplanning/test_experimrnts/testcase/n100.nets
+Terminals:  /home/simple/university_study/DaSanXia/EDA/SA_Btree_Floorplanning/test_experimrnts/testcase/n100.pl
+Ratio:      0.1
+Runs:       1
+Start time: Sat Jun  6 21:26:00 2026
+==============================================
+
+Algorithm mode: 1
+Total Block Area: 179501
+Target Area:      197451
+W:                444
+
+Random seed: 356169864
+
+[BuildInitBtree] 耗时: 8 us
+
+Found feasible solution
+Width:      444
+Height:     441
+Area:       195804
+Wirelength: 231330
+R:          0.993243
+Cost:       0.63705
+
+[SimulatedAnnealing] 耗时: 13.643037 s
+
+Run:        1
+曲线数据已保存至:   /home/simple/university_study/DaSanXia/EDA/SA_Btree_Floorplanning/test_experimrnts/results/curve_results/curve_data_algo1_2026-06-06_21:26:00_algo1/curve_data_run1_algo1.csv
+结束时间: Sat Jun  6 21:26:14 2026
+==============================================
+
+
+========== 最终结果 (曲线模式) ==========
+统计汇总（基于成功提取的数据）
+指标         平均值           标准差           
+------------------------------------------
+Width        444.0000        0.0000         
+Height       441.0000        0.0000         
+Area         195804.0000     0.0000         
+Wirelength   231330.0000     0.0000         
+R            0.9932          0.0000         
+Cost         0.6371          0.0000         
+BTree_T_us   8.0000          0.0000         
+SA_T_s       13.6430         0.0000         
+Feasible     1.0000          0.0000         
+算法模式：1
+可行解统计: found = 1, not found = 0
+
+结束时间: Sat Jun  6 21:26:14 2026
+==============================================

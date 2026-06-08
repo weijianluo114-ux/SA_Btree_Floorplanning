@@ -1,0 +1,2 @@
+P,r,epsilon,reject_rate,k,max_seconds_divisor,time_limit(s),T0_block_divisor,prob_rotate,prob_swap,prob_move,,,,,,,,,,,,,,,
+0.95,0.9,0.0001,0.99,20,10,1195,1,,,,,,,,,,,,,,,,,,
