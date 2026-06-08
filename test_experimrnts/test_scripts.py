@@ -271,12 +271,12 @@ def main():
     ensure_dir(log_file.parent)
 
     # 结果 CSV 文件
-    if args.results_csv is None:
-        results_csv = script_dir / f"./results/n_runs_result/results_{args.num_runs}{algo_tag}_{timestamp}.csv"
-    else:
-        results_csv = Path(args.results_csv)
-    results_csv = results_csv.resolve()
-    ensure_dir(results_csv.parent)
+    # if args.results_csv is None:
+    #     results_csv = script_dir / f"./results/n_runs_result/results_{args.num_runs}{algo_tag}_{timestamp}.csv"
+    # else:
+    #     results_csv = Path(args.results_csv)
+    # results_csv = results_csv.resolve()
+    # ensure_dir(results_csv.parent)
 
     # 编译
     if not args.skip_make:
@@ -343,7 +343,7 @@ def main():
     table_data = []   # 每个元素为 (run, seed, width, height, area, wirelength, R, cost)
 
     print(f"开始批量测试，日志保存到 {log_file}")
-    print(f"结果表格将保存到 {results_csv}")
+    # print(f"结果表格将保存到 {results_csv}")
 
     # 批量运行（原逻辑）
     if args.record_curve:
@@ -434,16 +434,16 @@ def main():
             print(f"[{run_idx}/{args.num_runs}] seed={seed} 完成 (返回码 {retcode})")
 
     # 写入 CSV 表格
-    with open(results_csv, "w", newline="") as csvfile:
-        writer = csv.writer(csvfile)
-        writer.writerow([
-            "run", "seed", "Width", "Height", "Area", "Wirelength", "R", "Cost",
-            "BTree_T_us", "SA_T_s", "Feasible"
-        ])
-        for row in table_data:
-            writer.writerow(row)
+    # with open(results_csv, "w", newline="") as csvfile:
+    #     writer = csv.writer(csvfile)
+    #     writer.writerow([
+    #         "run", "seed", "Width", "Height", "Area", "Wirelength", "R", "Cost",
+    #         "BTree_T_us", "SA_T_s", "Feasible"
+    #     ])
+    #     for row in table_data:
+    #         writer.writerow(row)
 
-    print(f"\n结果表格已保存到 {results_csv}")
+    # print(f"\n结果表格已保存到 {results_csv}")
 
     # 统计分析（忽略 None 值）
     stats = {}

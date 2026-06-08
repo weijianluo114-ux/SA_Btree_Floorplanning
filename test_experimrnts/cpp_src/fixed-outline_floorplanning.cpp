@@ -32,15 +32,15 @@ using namespace std;
 struct SA_config
 {
     double P = 0.95;              // 初始接受概率，用于计算 T0
-    double r = 0.90;              // 温度衰减系数
+    double r = 0.85;              // 温度衰减系数
     double epsilon = 0.0001;      // 最低温度阈值
     double reject_rate = 0.99;    // 最大拒绝率
-    int k = 20;                   // 每块试探次数系数 (N = k * num_hardblocks)
+    int k = 40;                   // 每块试探次数系数 (N = k * num_hardblocks)
     int max_seconds_divisor = 10; // 阶段超时: max_seconds = (n / divisor)^2
     int time_limit = 1195;        // 总运行时间上限 (秒)
     // 操作概率 (当前为均匀 rand()%3，可扩展)
-    // double op_prob[3] = {1.0/3, 1.0/3, 1.0/3};
-    double t0_block_divisor = 1.0; // T0 = -cost * (n / divisor) / log(P)
+    double op_prob[3] = {0.1, 0.8, 0.1};
+    double t0_block_divisor = 100.0; // T0 = -cost * (n / divisor) / log(P)
 };
 
 // ========== GMS 算法配置 ==========
@@ -54,7 +54,7 @@ struct GMS_config
     double bias_explore_ratio = 0.1; // 纯随机探索概率
     // SA 参数
     double P = 0.95;           // 初始接受概率，用于计算 T0
-    double r = 0.85;           // 温度衰减系数
+    double r = 0.60;           // 温度衰减系数
     double epsilon = 0.0001;   // 最低温度阈值
     double reject_rate = 0.99; // 最大拒绝率
     int k = 40;                // 每块试探次数系数 (N = k * num_hardblocks)
@@ -933,6 +933,7 @@ void SimulatedAnnealing(const SA_config &cfg)
 
     const int k = cfg.k;              // 每个硬块对应的试探次数系数。后面 N = k * num_hardblocks，表示每一轮允许的局部扰动规模和块数成正比。
     const int N = k * num_hardblocks; // 每一温度下的基础扰动上限
+    const double *operation_probs = cfg.op_prob;
     // 初始温度。这个公式是根据“初始时差解接受概率约为 P”反推出来的。min_cost.cost 越大，初温越高；num_hardblocks 越多，初温也越高。
     const double T0 = -min_cost.cost * num_hardblocks / (cfg.t0_block_divisor) / log(P);
     const int max_seconds = (num_hardblocks / cfg.max_seconds_divisor) * (num_hardblocks / cfg.max_seconds_divisor); // 一个按规模变化的阶段时间上限。块越多，这个值越大，允许搜索的单阶段时间越长。
@@ -979,63 +980,20 @@ void SimulatedAnnealing(const SA_config &cfg)
             int prev_root_block = root_block;              // 记录当前树的根节点编号。因为后面做 Swap 或 Move 时，根节点有可能变化，所以也要单独备份。
 
             // new----------------------------------------------
-            // double op_rand = (double)rand() / RAND_MAX;
-            // int M;
-            // if (op_rand <= operation_probs[0]) // 旋转操作
-            // {
-            //     // rotate
-            //     M = 0;
-            //     // 随机选一个硬块节点 node，然后调用 Rotate 把它宽高交换，也就是块旋转 90 度。
-            //     int node = rand() % num_hardblocks;
-            //     Rotate(node);
-            // }
-            // else if (op_rand <= operation_probs[0] + operation_probs[1]) // 如果随机数是 1，就做 swap 操作。
-            // {
-            //     // swap
-            //     M = 1;
-            //     int node1, node2;
-            //     // 先随机选 node1，再随机选一个和它不同的 node2，然后调用 Swap 交换这两个节点在树中的位置。
-            //     node1 = rand() % num_hardblocks;
-            //     do
-            //     {
-            //         node2 = rand() % num_hardblocks;
-            //     } while (node2 == node1);
-            //     Swap(node1, node2);
-            // }
-            // else if (op_rand <= operation_probs[0] + operation_probs[1] + operation_probs[2]) // move 操作
-            // {
-            //     M = 2;
-            //     // move
-            //     int node, to_node;
-            //     // 先随机选一个要移动的节点 node，再随机选一个目标节点 to_node，但要保证
-            //     // 这样是为了避免形成非法结构或立即构成环。最后调用 Move 把 node 挂到 to_node 下面。
-            //     node = rand() % num_hardblocks;
-            //     do
-            //     {
-            //         to_node = rand() % num_hardblocks;
-            //     } while (to_node == node || btree[node].parent == to_node); // to_node != node      to_node 不能是 node 的父节点
-            //     Move(node, to_node);
-            // }
-            // else // 这是兜底分支。按理说前面 rand() % 3 只会得到 0、1、2，所以这里不该进来。如果真的进来了，说明逻辑出了意外，程序直接报错退出。
-            // {
-            //     cout << "[Error] Unspecified Move\n";
-            //     exit(1);
-            // }
-            // new_end----------------------------------------------
-
-            // 这段是在每一轮扰动里，随机选择一种操作：旋转、交换、移动。它对应模拟退火里的“邻域搜索”。
-
-            int M = rand() % 3; // 随机生成一个 0、1 或 2，用来决定这次要做哪一种操作。
-            if (M == 0)         // 旋转操作
+            double op_rand = (double)rand() / RAND_MAX;
+            int M;
+            if (op_rand <= operation_probs[0]) // 旋转操作
             {
                 // rotate
+                M = 0;
                 // 随机选一个硬块节点 node，然后调用 Rotate 把它宽高交换，也就是块旋转 90 度。
                 int node = rand() % num_hardblocks;
                 Rotate(node);
             }
-            else if (M == 1) // 如果随机数是 1，就做 swap 操作。
+            else if (op_rand <= operation_probs[0] + operation_probs[1]) // 如果随机数是 1，就做 swap 操作。
             {
                 // swap
+                M = 1;
                 int node1, node2;
                 // 先随机选 node1，再随机选一个和它不同的 node2，然后调用 Swap 交换这两个节点在树中的位置。
                 node1 = rand() % num_hardblocks;
@@ -1045,8 +1003,9 @@ void SimulatedAnnealing(const SA_config &cfg)
                 } while (node2 == node1);
                 Swap(node1, node2);
             }
-            else if (M == 2) // move 操作
+            else if (op_rand <= operation_probs[0] + operation_probs[1] + operation_probs[2]) // move 操作
             {
+                M = 2;
                 // move
                 int node, to_node;
                 // 先随机选一个要移动的节点 node，再随机选一个目标节点 to_node，但要保证
@@ -1063,6 +1022,48 @@ void SimulatedAnnealing(const SA_config &cfg)
                 cout << "[Error] Unspecified Move\n";
                 exit(1);
             }
+            // new_end----------------------------------------------
+
+            // 这段是在每一轮扰动里，随机选择一种操作：旋转、交换、移动。它对应模拟退火里的“邻域搜索”。
+
+            // int M = rand() % 3; // 随机生成一个 0、1 或 2，用来决定这次要做哪一种操作。
+            // if (M == 0)         // 旋转操作
+            // {
+            //     // rotate
+            //     // 随机选一个硬块节点 node，然后调用 Rotate 把它宽高交换，也就是块旋转 90 度。
+            //     int node = rand() % num_hardblocks;
+            //     Rotate(node);
+            // }
+            // else if (M == 1) // 如果随机数是 1，就做 swap 操作。
+            // {
+            //     // swap
+            //     int node1, node2;
+            //     // 先随机选 node1，再随机选一个和它不同的 node2，然后调用 Swap 交换这两个节点在树中的位置。
+            //     node1 = rand() % num_hardblocks;
+            //     do
+            //     {
+            //         node2 = rand() % num_hardblocks;
+            //     } while (node2 == node1);
+            //     Swap(node1, node2);
+            // }
+            // else if (M == 2) // move 操作
+            // {
+            //     // move
+            //     int node, to_node;
+            //     // 先随机选一个要移动的节点 node，再随机选一个目标节点 to_node，但要保证
+            //     // 这样是为了避免形成非法结构或立即构成环。最后调用 Move 把 node 挂到 to_node 下面。
+            //     node = rand() % num_hardblocks;
+            //     do
+            //     {
+            //         to_node = rand() % num_hardblocks;
+            //     } while (to_node == node || btree[node].parent == to_node); // to_node != node      to_node 不能是 node 的父节点
+            //     Move(node, to_node);
+            // }
+            // else // 这是兜底分支。按理说前面 rand() % 3 只会得到 0、1、2，所以这里不该进来。如果真的进来了，说明逻辑出了意外，程序直接报错退出。
+            // {
+            //     cout << "[Error] Unspecified Move\n";
+            //     exit(1);
+            // }
 
             // new----------------------------------------------
 #if CURVE_MODE
