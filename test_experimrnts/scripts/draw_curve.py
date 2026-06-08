@@ -59,7 +59,7 @@ def find_latest_csv(results_dir: Path) -> Path:
     latest = max(csv_files, key=extract_timestamp)
     return latest
 
-def process_single_csv(csv_path: Path, output_dir: Path, suffix: str, sample_step: int = 100):
+def process_single_csv(csv_path: Path, output_dir: Path, suffix: str, sample_step: int = 100, algo=0):
     """处理单个CSV文件，绘制所有曲线，输出到 output_dir"""
     output_dir.mkdir(parents=True, exist_ok=True)
     if suffix is None:
@@ -74,19 +74,20 @@ def process_single_csv(csv_path: Path, output_dir: Path, suffix: str, sample_ste
 
     # 1. 单独线性图
     print("绘制单个指标线性图...")
-    metrics = ['width', 'height', 'area', 'wirelength', 'R', 'cost', 'T']
+    metrics = ['width', 'height', 'area', 'wirelength', 'R', 'cost']
     for m in metrics:
-        plot_single_metric(df, m, 'Total_Moves', suffix, output_dir, logy=False, sample_step=sample_step)
+        plot_single_metric(df, m, 'Total_Moves', suffix, output_dir, logy=False, sample_step=sample_step, algo=algo)
 
+    plot_single_metric(df, 'T', 'Total_Moves', suffix, output_dir, logy=True, sample_step=sample_step, algo=algo)
     # 2. 总图（对数Y轴）
     print("绘制总图（对数Y轴子图）...")
-    plot_all_metrics_subplots(df, 'Total_Moves', suffix, output_dir)
+    plot_all_metrics_subplots(df, 'Total_Moves', suffix, output_dir, algo=algo)
 
     # 3. 温度行为图
-    print("绘制温度行为图...")
-    plot_temperature_behaviors(df, suffix, output_dir, n_front=2, n_back=2)
+    # print("绘制温度行为图...")
+    # plot_temperature_behaviors(df, suffix, output_dir, n_front=2, n_back=2, algo=algo)
 
-def plot_single_metric(df, metric, x_col, suffix, output_dir, logy=False, sample_step=100):
+def plot_single_metric(df, metric, x_col, suffix, output_dir, logy=False, sample_step=100, algo=0):
     """
     绘制单个指标随 Total_Moves 的变化图（曲线图），线段颜色代表温度（对数映射）。
     过滤温度为零的点，颜色映射范围基于非零温度的最大最小值。
@@ -131,7 +132,7 @@ def plot_single_metric(df, metric, x_col, suffix, output_dir, logy=False, sample
 
     ax.set_xlabel('Total Moves')
     ax.set_ylabel(metric)
-    ax.set_title(f'{metric} vs Total Moves (line color = log10(T), sampled every {sample_step})')
+    ax.set_title(f'{metric} vs Total Moves (line color = log10(T), sampled every {sample_step})(alog{algo})')
     ax.grid(True, alpha=0.3)
 
     # 添加 colorbar，显示真实温度值
@@ -146,7 +147,7 @@ def plot_single_metric(df, metric, x_col, suffix, output_dir, logy=False, sample
     plt.close()
     print(f"已保存: {filepath}")
 
-def plot_all_metrics_subplots(df, x_col, suffix, output_dir, sample_step=100):
+def plot_all_metrics_subplots(df, x_col, suffix, output_dir, sample_step=100, algo=0):
     """
     绘制6个指标子图（曲线图），线段颜色代表温度（对数映射），过滤零温度。
     """
@@ -196,7 +197,7 @@ def plot_all_metrics_subplots(df, x_col, suffix, output_dir, sample_step=100):
     cbar = fig.colorbar(line_collections[-1], cax=cbar_ax, ticks=np.linspace(vmin_log, vmax_log, 5))
     tick_labels = [f'{10**tick:.1e}' for tick in cbar.get_ticks()]
     cbar.set_ticklabels(tick_labels)
-    cbar.set_label('Temperature T (log scale)')
+    cbar.set_label(f'Temperature T (log scale)(algo{algo})')
 
     # 不要调用 plt.tight_layout()，否则会覆盖手动调整
     # plt.tight_layout()   # 注释或删除
@@ -208,7 +209,7 @@ def plot_all_metrics_subplots(df, x_col, suffix, output_dir, sample_step=100):
     plt.close()
     print(f"已保存: {filepath}")
 
-def plot_temperature_behaviors(df, suffix, output_dir, n_front=5, n_back=5):
+def plot_temperature_behaviors(df, suffix, output_dir, n_front=5, n_back=5, algo=0):
     """
     绘制前 n_front 个非零温度和最后 n_back 个温度下的 T_uphill, T_reject 随 T_Moves 的变化。
     每个温度单独一张图，使用双Y轴（左：T_uphill，右：T_reject）。
@@ -249,7 +250,7 @@ def plot_temperature_behaviors(df, suffix, output_dir, n_front=5, n_back=5):
         max_reject = subset['T_reject'].max()
         ax2.set_ylim(0, max_reject * 1.1 if max_reject > 0 else 1)
 
-        plt.title(f'Temperature T = {temp:.6f} : Uphill and Reject Moves')
+        plt.title(f'(algo{algo})Temperature T = {temp:.6f} : Uphill and Reject Moves')
         # 合并图例
         lines1, labels1 = ax1.get_legend_handles_labels()
         lines2, labels2 = ax2.get_legend_handles_labels()
@@ -328,6 +329,8 @@ def main():
                 base_output_dir = script_dir / "../results/curve_figures" / parent_dir.name
     base_output_dir.mkdir(parents=True, exist_ok=True)
 
+
+
     # ----- 逐个处理CSV文件 -----
     for csv_path, run_id in zip(csv_files, run_ids):
         # 决定每个run的输出子文件夹
@@ -336,8 +339,13 @@ def main():
         else:
             # 对于没有run编号的文件，使用文件名（不含扩展名）
             output_subdir = base_output_dir / csv_path.stem
+        # 提取 algo 编号：优先用命令行参数，否则从文件名中提取
+        algo_match = re.search(r'algo(\d+)', csv_path.stem)
+        algo = int(algo_match.group(1)) if algo_match else 0
+
         # 调用处理函数
-        process_single_csv(csv_path, output_subdir, suffix=csv_path.stem, sample_step=args.sample_step)
+        process_single_csv(csv_path, output_subdir, suffix=csv_path.stem,
+                        sample_step=args.sample_step, algo=algo)
 
     print("全部绘图完成！")
 

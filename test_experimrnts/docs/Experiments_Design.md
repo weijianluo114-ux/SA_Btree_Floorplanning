@@ -122,5 +122,4 @@ python draw_fixed_outline.py --batch --num_hardblocks 100 --white_space_ratio 0.
 
 **GMS布图**
 
-
-![原算法总图](..test_experimrnts/docs/assets/run1_algo1.png "原算法总图")
+![原算法总图](../docs/assets/run1_algo1.png "原算法总图")
