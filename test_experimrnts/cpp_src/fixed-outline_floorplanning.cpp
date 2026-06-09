@@ -143,6 +143,32 @@ struct GMS_FastSA_config
     int max_seconds_divisor = 10;
 };
 
+// ========== GMS_SawTooth_FastSA 算法配置 ==========
+struct GMS_SawTooth_FastSA_config
+{
+    // GMS 偏置选择参数
+    double prob_rotate = 0.33;
+    double prob_swap = 0.34;
+    double prob_move = 0.33;
+    double bias_explore_ratio = 0.1;
+
+    // SawTooth_FastSA 参数
+    double REHEAT_BETA = 0.5;
+    double REHEAT_DECAY = 0.9;
+    int REHEAT_THRESHOLD = 200;
+    double REHEAT_ROLLBACK_RATIO = 0.5;
+
+    double P = 0.95;
+    double c = 100.0;
+    int k = 7;
+    int max_iter = 200000;
+    int max_consecutive_reject = 5000;
+    double min_temp = 1e-9;
+    int sample_size = 1000;
+    double ewma_alpha = 0.1;
+    int max_seconds_divisor = 10;
+};
+
 //======================================================//
 
 typedef struct hardblock
@@ -529,8 +555,8 @@ Cost CalculateCost()
     // area of current floorplan
     double floorplan_area = width * height; // 计算当前 floorplan 的面积。这里用的是外包矩形面积，不是所有块真实面积之和。
     // aspect ratio of current floorplan
-    // double R = (double)height / width; // 计算当前版图的长宽比，这里会导致不对称输出，故要更正
-    double R = (double)height / width; // 更新后的R计算方式
+    double R = (double)height / width; // 计算当前版图的长宽比，这里会导致不对称输出，故要更正
+    // double R = (double)min(height, width) / max(height, width); // 更新后的R计算方式
 
     // half perimeter wire length   半周长线长
     double wirelength = 0;              // 初始化半周长线长的累加值。后面会遍历每一条 net，把每条 net 的 HPWL 加到这里。
@@ -2622,6 +2648,306 @@ void GMS_FastSA(const GMS_FastSA_config &cfg)
     PrintAndVerifyResult();
 }
 
+void GMS_SawTooth_FastSA(const GMS_SawTooth_FastSA_config &cfg)
+{
+#ifdef DEBUG
+    ScopedTimer t("SimulatedAnnealing");
+#endif
+
+#if CURVE_MODE
+    if (g_curve_mode)
+    {
+        Total_Moves = 0;
+        T_Moves = 0;
+        T_uphill = 0;
+        T_reject = 0;
+    }
+#endif
+
+    // ---------- 初始化 ----------
+    min_cost = CalculateCost();
+    min_cost_floorplan = hardblocks;
+
+    // ---------- GMS: 偏置选择器 ----------
+    BiasSelector selector(num_hardblocks);
+    double operation_probs[3] = {cfg.prob_rotate, cfg.prob_swap, cfg.prob_move};
+    double bias_explore_ratio = cfg.bias_explore_ratio;
+
+    // ========== FastSA 预采样估算 Δavg ==========
+    vector<HardBlock> hardblocks_bak = hardblocks;
+    vector<Node> btree_bak = btree;
+    int root_block_bak = root_block;
+    Cost min_cost_bak = min_cost;
+
+    double total_uphill = 0.0;
+    int uphill_count = 0;
+    const int SAMPLE_SIZE = cfg.sample_size;
+
+    for (int s = 0; s < SAMPLE_SIZE; ++s)
+    {
+        int M = rand() % 3;
+        if (M == 0)
+        {
+            int node = rand() % num_hardblocks;
+            Rotate(node);
+        }
+        else if (M == 1)
+        {
+            int n1 = rand() % num_hardblocks;
+            int n2;
+            do
+            {
+                n2 = rand() % num_hardblocks;
+            } while (n2 == n1);
+            Swap(n1, n2);
+        }
+        else
+        {
+            int node = rand() % num_hardblocks;
+            int to_node;
+            do
+            {
+                to_node = rand() % num_hardblocks;
+            } while (to_node == node || btree[node].parent == to_node);
+            Move(node, to_node);
+        }
+        Cost cur = CalculateCost();
+        double delta = cur.cost - min_cost.cost;
+        if (delta > 0)
+        {
+            total_uphill += delta;
+            uphill_count++;
+        }
+        hardblocks = hardblocks_bak;
+        btree = btree_bak;
+        root_block = root_block_bak;
+        CalculateCost();
+    }
+    double delta_avg = (uphill_count > 0) ? (total_uphill / uphill_count) : 1.0;
+    double T1 = fabs(delta_avg / log(cfg.P));
+
+    // 恢复原始状态
+    hardblocks = hardblocks_bak;
+    btree = btree_bak;
+    root_block = root_block_bak;
+    min_cost = min_cost_bak;
+    CalculateCost();
+
+    // ========== 主循环 (SawTooth_FastSA 结构 + GMS 偏置选择) ==========
+    int iter = 0;
+    int temp_n = 1;
+    double avg_delta_cost = delta_avg;
+    int reheat_count = 0;
+    T = T1;
+    Cost prev_cost = min_cost;
+    in_fixed_outline = false;
+
+    clock_t start_time = clock();
+    clock_t time = start_time;
+    const int max_seconds = (num_hardblocks / cfg.max_seconds_divisor) * (num_hardblocks / cfg.max_seconds_divisor);
+    int seconds = 0;
+    int consecutive_reject = 0;
+
+    while (true)
+    {
+        // ---------- 超时重启 ----------
+        seconds = (clock() - time) / CLOCKS_PER_SEC;
+        if (seconds >= max_seconds && !in_fixed_outline)
+        {
+            cout << "Overtime " << min_cost.width << " " << min_cost.height << '\n';
+            seconds = 0;
+            time = clock();
+            iter = 0;
+            temp_n = 1;
+            avg_delta_cost = delta_avg;
+            T = T1;
+            prev_cost = min_cost;
+            consecutive_reject = 0;
+        }
+
+        // ---------- 保存状态 ----------
+        vector<HardBlock> hardblocks_temp = hardblocks;
+        vector<Node> btree_temp = btree;
+        int prev_root_block = root_block;
+
+        // ---------- GMS 偏置选择操作 ----------
+        bool use_bias = ((double)rand() / RAND_MAX) >= bias_explore_ratio;
+        int M, a, b;
+
+        if (!use_bias)
+        {
+            M = rand() % 3;
+            if (M == 0)
+            {
+                a = rand() % num_hardblocks;
+                b = a;
+            }
+            else if (M == 1)
+            {
+                a = rand() % num_hardblocks;
+                do
+                {
+                    b = rand() % num_hardblocks;
+                } while (a == b);
+            }
+            else
+            {
+                a = rand() % num_hardblocks;
+                do
+                {
+                    b = rand() % num_hardblocks;
+                } while (a == b || btree[a].parent == b);
+            }
+        }
+        else
+        {
+            double op_rand = (double)rand() / RAND_MAX;
+            if (op_rand < operation_probs[0])
+            {
+                M = 0;
+                a = rand() % num_hardblocks;
+                b = a;
+            }
+            else if (op_rand < operation_probs[0] + operation_probs[1])
+            {
+                M = 1;
+                tie(a, b) = selector.selectPair(T);
+            }
+            else
+            {
+                M = 2;
+                tie(a, b) = selector.selectPair(T);
+                if (btree[a].parent == b)
+                {
+                    a = rand() % num_hardblocks;
+                    do
+                    {
+                        b = rand() % num_hardblocks;
+                    } while (a == b || btree[a].parent == b);
+                }
+            }
+        }
+
+        // ---------- 执行扰动 ----------
+        if (M == 0)
+            Rotate(a);
+        else if (M == 1)
+            Swap(a, b);
+        else
+            Move(a, b);
+
+#if CURVE_MODE
+        if (g_curve_mode)
+        {
+            Total_Moves++;
+            T_Moves++;
+        }
+#endif
+
+        // ---------- 代价计算 + FastSA 温度更新 ----------
+        Cost cur_cost = CalculateCost();
+        double delta_cost = cur_cost.cost - prev_cost.cost;
+        avg_delta_cost = (1 - cfg.ewma_alpha) * avg_delta_cost + cfg.ewma_alpha * fabs(delta_cost);
+
+        int n = temp_n;
+        if (n == 1)
+            T = T1;
+        else if (n <= cfg.k)
+            T = T1 * avg_delta_cost / (n * cfg.c);
+        else
+            T = T1 * avg_delta_cost / n;
+        if (T < cfg.min_temp)
+            T = cfg.min_temp;
+
+        // ---------- SawTooth 回火逻辑 ----------
+        if (consecutive_reject >= cfg.REHEAT_THRESHOLD && temp_n > 1)
+        {
+            int rollback = max(1, (int)(temp_n * cfg.REHEAT_ROLLBACK_RATIO * pow(cfg.REHEAT_DECAY, reheat_count)));
+            temp_n = max(1, temp_n - rollback);
+            consecutive_reject = 0;
+            reheat_count++;
+        }
+
+        // ---------- Metropolis 接受准则 ----------
+        double random = ((double)rand()) / RAND_MAX;
+        bool accepted = false;
+
+        if (delta_cost <= 0 || random < exp(-delta_cost / T))
+        {
+            accepted = true;
+#if CURVE_MODE
+            if (g_curve_mode && delta_cost > 0)
+                T_uphill++;
+#endif
+            prev_cost = cur_cost;
+            consecutive_reject = 0;
+
+            if (cur_cost.width <= W && cur_cost.height <= W)
+            {
+                if (in_fixed_outline)
+                {
+                    if (cur_cost.cost < min_cost_fixed_outline.cost)
+                    {
+                        min_cost_root_block_fixed_outline = root_block;
+                        min_cost_fixed_outline = cur_cost;
+                        min_cost_floorplan_fixed_outline = hardblocks;
+                        min_cost_btree_fixed_outline = btree;
+                    }
+                }
+                else
+                {
+                    in_fixed_outline = true;
+                    min_cost_root_block_fixed_outline = root_block;
+                    min_cost_fixed_outline = cur_cost;
+                    min_cost_floorplan_fixed_outline = hardblocks;
+                    min_cost_btree_fixed_outline = btree;
+                }
+            }
+
+            if (cur_cost.cost < min_cost.cost)
+            {
+                min_cost_root_block = root_block;
+                min_cost = cur_cost;
+                min_cost_floorplan = hardblocks;
+                min_cost_btree = btree;
+            }
+        }
+        else
+        {
+            accepted = false;
+#if CURVE_MODE
+            if (g_curve_mode)
+                T_reject++;
+#endif
+            consecutive_reject++;
+            root_block = prev_root_block;
+            if (M == 0)
+                hardblocks = hardblocks_temp;
+            else
+                btree = btree_temp;
+            CalculateCost();
+        }
+
+        // ---------- GMS: 更新偏置矩阵 (非旋转操作) ----------
+        if (M != 0)
+            selector.update(a, b, delta_cost, T, accepted);
+
+        iter++;
+        temp_n++;
+
+        // ---------- 停止条件 ----------
+        if (consecutive_reject >= cfg.max_consecutive_reject && T <= cfg.min_temp)
+            break;
+        if (iter >= cfg.max_iter)
+            break;
+    }
+
+    double runtime = (double)(clock() - start_time) / CLOCKS_PER_SEC;
+    cout << "Total runtime: " << runtime << " seconds" << endl;
+
+    PrintAndVerifyResult();
+}
+
 // 这个函数的作用是把当前版图结果写到输出文件里，格式包括总线长和每个硬块的坐标、尺寸、是否旋转
 void OutputFloorplan(string output_file, int wirelength, vector<HardBlock> &hb,
                      const vector<Node> &bt, int root_id)
@@ -2850,6 +3176,49 @@ SawTooth_FastSA_config load_SawTooth_FastSA_config_from_json(const json &j)
     return cfg;
 }
 
+GMS_SawTooth_FastSA_config load_GMS_SawTooth_FastSA_config_from_json(const json &j)
+{
+    GMS_SawTooth_FastSA_config cfg;
+    if (!j.contains("GMS_SawTooth_FastSA"))
+        return cfg;
+    const auto &gst = j["GMS_SawTooth_FastSA"];
+    if (gst.contains("prob_rotate"))
+        cfg.prob_rotate = gst["prob_rotate"];
+    if (gst.contains("prob_swap"))
+        cfg.prob_swap = gst["prob_swap"];
+    if (gst.contains("prob_move"))
+        cfg.prob_move = gst["prob_move"];
+    if (gst.contains("bias_explore_ratio"))
+        cfg.bias_explore_ratio = gst["bias_explore_ratio"];
+    if (gst.contains("REHEAT_BETA"))
+        cfg.REHEAT_BETA = gst["REHEAT_BETA"];
+    if (gst.contains("REHEAT_DECAY"))
+        cfg.REHEAT_DECAY = gst["REHEAT_DECAY"];
+    if (gst.contains("REHEAT_THRESHOLD"))
+        cfg.REHEAT_THRESHOLD = gst["REHEAT_THRESHOLD"];
+    if (gst.contains("REHEAT_ROLLBACK_RATIO"))
+        cfg.REHEAT_ROLLBACK_RATIO = gst["REHEAT_ROLLBACK_RATIO"];
+    if (gst.contains("P"))
+        cfg.P = gst["P"];
+    if (gst.contains("c"))
+        cfg.c = gst["c"];
+    if (gst.contains("k"))
+        cfg.k = gst["k"];
+    if (gst.contains("max_iter"))
+        cfg.max_iter = gst["max_iter"];
+    if (gst.contains("max_consecutive_reject"))
+        cfg.max_consecutive_reject = gst["max_consecutive_reject"];
+    if (gst.contains("min_temp"))
+        cfg.min_temp = gst["min_temp"];
+    if (gst.contains("sample_size"))
+        cfg.sample_size = gst["sample_size"];
+    if (gst.contains("ewma_alpha"))
+        cfg.ewma_alpha = gst["ewma_alpha"];
+    if (gst.contains("max_seconds_divisor"))
+        cfg.max_seconds_divisor = gst["max_seconds_divisor"];
+    return cfg;
+}
+
 GMS_FastSA_config load_GMS_FastSA_config_from_json(const json &j)
 {
     GMS_FastSA_config cfg;
@@ -3009,6 +3378,12 @@ int main(int argc, char **argv)
     {
         GMS_DoubleMatrix_config cfg = load_GMS_DoubleMatrix_config_from_json(j);
         GMS_DoubleMatrix(cfg);
+        break;
+    }
+    case 6: // GMS_SawTooth_FastSA
+    {
+        GMS_SawTooth_FastSA_config cfg = load_GMS_SawTooth_FastSA_config_from_json(j);
+        GMS_SawTooth_FastSA(cfg);
         break;
     }
     default:

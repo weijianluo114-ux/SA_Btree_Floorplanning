@@ -29,6 +29,7 @@ python test_scripts.py --num_runs 2 --white_space_ratio 0.15
 ```
 
 脚本会自动：
+
 1. 执行 `make -f Makefile.debug` 编译 C++ 程序
 2. 生成随机种子并保存到 `./seeds/`
 3. 运行指定次数，记录每次的原始输出
@@ -40,34 +41,34 @@ python test_scripts.py --num_runs 2 --white_space_ratio 0.15
 
 ## 命令行参数一览
 
-| 参数 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `--executable` | str | `./bin/hw3_dbg` | 可执行文件路径（相对于脚本目录） |
-| `--hardblocks` | str | `./testcase/n100.hardblocks` | hardblocks 文件路径 |
-| `--nets` | str | `./testcase/n100.nets` | nets 文件路径 |
-| `--terminals` | str | `./testcase/n100.pl` | terminals 文件路径 |
-| `--white_space_ratio` | float | `0.1` | 空白比例 |
-| `--num_runs` | int | `20` | 运行次数 |
-| `--output_dir` | str | `None` | floorplan 输出目录（自动生成） |
-| `--log_file` | str | `None` | 完整日志文件路径（自动生成） |
-| `--seed_file` | str | `None` | 种子文件路径（指定后可复现实验） |
-| `--skip_make` | flag | `False` | 跳过 make 编译步骤 |
-| `--record_curve` | flag | `False` | 记录模拟退火过程中的详细参数曲线 |
-| `-a` / `--algo` | int | `0` | 算法模式（见下表） |
-| `--tune` | str | `None` | 调优配置文件（YAML），触发参数调优模式 |
+| 参数                    | 类型  | 默认值                         | 说明                                   |
+| ----------------------- | ----- | ------------------------------ | -------------------------------------- |
+| `--executable`        | str   | `./bin/hw3_dbg`              | 可执行文件路径（相对于脚本目录）       |
+| `--hardblocks`        | str   | `./testcase/n100.hardblocks` | hardblocks 文件路径                    |
+| `--nets`              | str   | `./testcase/n100.nets`       | nets 文件路径                          |
+| `--terminals`         | str   | `./testcase/n100.pl`         | terminals 文件路径                     |
+| `--white_space_ratio` | float | `0.1`                        | 空白比例                               |
+| `--num_runs`          | int   | `20`                         | 运行次数                               |
+| `--output_dir`        | str   | `None`                       | floorplan 输出目录（自动生成）         |
+| `--log_file`          | str   | `None`                       | 完整日志文件路径（自动生成）           |
+| `--seed_file`         | str   | `None`                       | 种子文件路径（指定后可复现实验）       |
+| `--skip_make`         | flag  | `False`                      | 跳过 make 编译步骤                     |
+| `--record_curve`      | flag  | `False`                      | 记录模拟退火过程中的详细参数曲线       |
+| `-a` / `--algo`     | int   | `0`                          | 算法模式（见下表）                     |
+| `--tune`              | str   | `None`                       | 调优配置文件（YAML），触发参数调优模式 |
 
 ---
 
 ## 算法模式对照表
 
-| `-a` 值 | 算法名称 | JSON 配置块名 | 说明 |
-|---------|----------|---------------|------|
-| `0` | **SA** | `"SA"` | 原始模拟退火算法 |
-| `1` | **GMS** | `"GMS"` | Guided Move Selection + SA |
-| `2` | **FastSA** | `"FastSA"` | 快速模拟退火（动态温度调度） |
-| `3` | **GMS_FastSA** | `"GMS_FastSA"` | GMS 偏置选择 + FastSA 温度调度 |
-| `4` | **SawTooth_FastSA** | `"SawTooth_FastSA"` | 锯齿形回火 FastSA |
-| `5` | **GMS_DoubleMatrix** | `"GMS_DoubleMatrix"` | 双矩阵 GMS（Swap/Move 分离） |
+| `-a` 值 | 算法名称                   | JSON 配置块名          | 说明                           |
+| --------- | -------------------------- | ---------------------- | ------------------------------ |
+| `0`     | **SA**               | `"SA"`               | 原始模拟退火算法               |
+| `1`     | **GMS**              | `"GMS"`              | Guided Move Selection + SA     |
+| `2`     | **FastSA**           | `"FastSA"`           | 快速模拟退火（动态温度调度）   |
+| `3`     | **GMS_FastSA**       | `"GMS_FastSA"`       | GMS 偏置选择 + FastSA 温度调度 |
+| `4`     | **SawTooth_FastSA**  | `"SawTooth_FastSA"`  | 锯齿形回火 FastSA              |
+| `5`     | **GMS_DoubleMatrix** | `"GMS_DoubleMatrix"` | 双矩阵 GMS（Swap/Move 分离）   |
 
 ---
 
@@ -159,10 +160,10 @@ fixed:                 # 固定参数（可选，覆盖结构体默认值）
 
 ```bash
 # 基本调优
-python test_scripts.py --tune tune_config.yaml --white_space_ratio 0.1
+python test_scripts.py --tune ./config/tune_config.yaml --white_space_ratio 0.1
 
 # 调优 + 曲线记录（强制 num_runs=1，最多 10 个参数值）
-python test_scripts.py --tune tune_config.yaml --white_space_ratio 0.1 --record_curve
+python test_scripts.py --tune ./config/tune_config.yaml --white_space_ratio 0.1 --record_curve
 ```
 
 ### 3.3 输出目录结构

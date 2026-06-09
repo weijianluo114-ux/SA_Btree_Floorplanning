@@ -10,7 +10,7 @@ end: 50
 step: 5
 
 # 每个参数值运行的实验次数
-num_runs_per_value: 10
+num_runs_per_value: 6
 
 # 其他固定参数（可选）
 fixed: {

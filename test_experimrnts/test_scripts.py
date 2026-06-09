@@ -267,6 +267,7 @@ ALGO_TO_BLOCK = {
     3: "GMS_FastSA",
     4: "SawTooth_FastSA",
     5: "GMS_DoubleMatrix",
+    6: "GMS_SawTooth_FastSA",
 }
 
 # ========== 公共统计输出函数（减少 main 和 run_tuning 的代码重复） ==========
