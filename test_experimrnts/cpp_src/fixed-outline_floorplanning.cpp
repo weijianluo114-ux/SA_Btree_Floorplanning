@@ -16,9 +16,10 @@
 #include <sstream>
 #include <tuple>
 #include <cstring>
+#include "json.hpp" // nlohmann/json
 
 //------------------------------------------------------//
-
+using json = nlohmann::json;
 using namespace std;
 
 //---------------------new MACRO------------------------//
@@ -528,7 +529,8 @@ Cost CalculateCost()
     // area of current floorplan
     double floorplan_area = width * height; // 计算当前 floorplan 的面积。这里用的是外包矩形面积，不是所有块真实面积之和。
     // aspect ratio of current floorplan
-    double R = (double)height / width; // 计算当前版图的长宽比，也就是高度除以宽度。
+    // double R = (double)height / width; // 计算当前版图的长宽比，这里会导致不对称输出，故要更正
+    double R = (double)height / width; // 更新后的R计算方式
 
     // half perimeter wire length   半周长线长
     double wirelength = 0;              // 初始化半周长线长的累加值。后面会遍历每一条 net，把每条 net 的 HPWL 加到这里。
@@ -2621,10 +2623,12 @@ void GMS_FastSA(const GMS_FastSA_config &cfg)
 }
 
 // 这个函数的作用是把当前版图结果写到输出文件里，格式包括总线长和每个硬块的坐标、尺寸、是否旋转
-void OutputFloorplan(string output_file, int wirelength, vector<HardBlock> &hb)
+void OutputFloorplan(string output_file, int wirelength, vector<HardBlock> &hb,
+                     const vector<Node> &bt, int root_id)
 {
-    ofstream file;          // 创建一个文件输出流对象。
-    file.open(output_file); // 打开指定的输出文件，准备写入。
+    // ---- 输出 .floorplan 文件 ----
+    ofstream file;
+    file.open(output_file);
 
     file << "W:" << W << '\n';
     file << "Wirelength " << ":" << wirelength << '\n';
@@ -2633,12 +2637,32 @@ void OutputFloorplan(string output_file, int wirelength, vector<HardBlock> &hb)
     for (int i = 0; i < num_hardblocks; i++)
     {
         if (hb[i].rotate)
-            file << "sb" << i << " " << hb[i].x << " " << hb[i].y << " " << hb[i].height << " " << hb[i].width << " 1\n";
+            file << "sb" << i << " " << hb[i].x << " " << hb[i].y << " "
+                 << hb[i].height << " " << hb[i].width << " 1\n";
         else
-            file << "sb" << i << " " << hb[i].x << " " << hb[i].y << " " << hb[i].width << " " << hb[i].height << " 0\n";
+            file << "sb" << i << " " << hb[i].x << " " << hb[i].y << " "
+                 << hb[i].width << " " << hb[i].height << " 0\n";
     }
-
     file.close();
+
+    // ---- 输出 .Btree 文件（新增）----
+    // 将 output_file 的后缀从 .floorplan 替换为 .Btree
+    string btree_file = output_file;
+    size_t dot_pos = btree_file.rfind(".floorplan");
+    if (dot_pos != string::npos)
+        btree_file = btree_file.substr(0, dot_pos) + ".Btree";
+    else
+        btree_file += ".Btree";
+
+    ofstream bf;
+    bf.open(btree_file);
+    bf << "Root: " << root_id << '\n';
+    for (int i = 0; i < num_hardblocks; i++)
+    {
+        bf << i << " " << bt[i].parent << " "
+           << bt[i].left_child << " " << bt[i].right_child << '\n';
+    }
+    bf.close();
 }
 
 unsigned int GetRandomSeed()
@@ -2668,33 +2692,221 @@ unsigned int GetRandomSeed()
     return time(NULL);
 }
 
+// ========== JSON 配置加载函数 ==========
+
+SA_config load_SA_config_from_json(const json &j)
+{
+    SA_config cfg;
+    if (!j.contains("SA"))
+        return cfg;
+    const auto &sa = j["SA"];
+    if (sa.contains("P"))
+        cfg.P = sa["P"];
+    if (sa.contains("r"))
+        cfg.r = sa["r"];
+    if (sa.contains("epsilon"))
+        cfg.epsilon = sa["epsilon"];
+    if (sa.contains("reject_rate"))
+        cfg.reject_rate = sa["reject_rate"];
+    if (sa.contains("k"))
+        cfg.k = sa["k"];
+    if (sa.contains("max_seconds_divisor"))
+        cfg.max_seconds_divisor = sa["max_seconds_divisor"];
+    if (sa.contains("time_limit"))
+        cfg.time_limit = sa["time_limit"];
+    if (sa.contains("t0_block_divisor"))
+        cfg.t0_block_divisor = sa["t0_block_divisor"];
+    if (sa.contains("op_prob") && sa["op_prob"].is_array() && sa["op_prob"].size() == 3)
+        for (int i = 0; i < 3; ++i)
+            cfg.op_prob[i] = sa["op_prob"][i];
+    return cfg;
+}
+
+GMS_config load_GMS_config_from_json(const json &j)
+{
+    GMS_config cfg;
+    if (!j.contains("GMS"))
+        return cfg;
+    const auto &gms = j["GMS"];
+    if (gms.contains("prob_rotate"))
+        cfg.prob_rotate = gms["prob_rotate"];
+    if (gms.contains("prob_swap"))
+        cfg.prob_swap = gms["prob_swap"];
+    if (gms.contains("prob_move"))
+        cfg.prob_move = gms["prob_move"];
+    if (gms.contains("bias_explore_ratio"))
+        cfg.bias_explore_ratio = gms["bias_explore_ratio"];
+    if (gms.contains("P"))
+        cfg.P = gms["P"];
+    if (gms.contains("r"))
+        cfg.r = gms["r"];
+    if (gms.contains("epsilon"))
+        cfg.epsilon = gms["epsilon"];
+    if (gms.contains("reject_rate"))
+        cfg.reject_rate = gms["reject_rate"];
+    if (gms.contains("k"))
+        cfg.k = gms["k"];
+    if (gms.contains("max_seconds_divisor"))
+        cfg.max_seconds_divisor = gms["max_seconds_divisor"];
+    if (gms.contains("time_limit"))
+        cfg.time_limit = gms["time_limit"];
+    if (gms.contains("t0_block_divisor"))
+        cfg.t0_block_divisor = gms["t0_block_divisor"];
+    return cfg;
+}
+
+GMS_DoubleMatrix_config load_GMS_DoubleMatrix_config_from_json(const json &j)
+{
+    GMS_DoubleMatrix_config cfg;
+    if (!j.contains("GMS_DoubleMatrix"))
+        return cfg;
+    const auto &gdm = j["GMS_DoubleMatrix"];
+    if (gdm.contains("prob_rotate"))
+        cfg.prob_rotate = gdm["prob_rotate"];
+    if (gdm.contains("prob_swap"))
+        cfg.prob_swap = gdm["prob_swap"];
+    if (gdm.contains("prob_move"))
+        cfg.prob_move = gdm["prob_move"];
+    if (gdm.contains("bias_explore_ratio"))
+        cfg.bias_explore_ratio = gdm["bias_explore_ratio"];
+    if (gdm.contains("P"))
+        cfg.P = gdm["P"];
+    if (gdm.contains("r"))
+        cfg.r = gdm["r"];
+    if (gdm.contains("epsilon"))
+        cfg.epsilon = gdm["epsilon"];
+    if (gdm.contains("reject_rate"))
+        cfg.reject_rate = gdm["reject_rate"];
+    if (gdm.contains("k"))
+        cfg.k = gdm["k"];
+    if (gdm.contains("max_seconds_divisor"))
+        cfg.max_seconds_divisor = gdm["max_seconds_divisor"];
+    if (gdm.contains("time_limit"))
+        cfg.time_limit = gdm["time_limit"];
+    if (gdm.contains("t0_block_divisor"))
+        cfg.t0_block_divisor = gdm["t0_block_divisor"];
+    return cfg;
+}
+
+FastSA_config load_FastSA_config_from_json(const json &j)
+{
+    FastSA_config cfg;
+    if (!j.contains("FastSA"))
+        return cfg;
+    const auto &fsa = j["FastSA"];
+    if (fsa.contains("P"))
+        cfg.P = fsa["P"];
+    if (fsa.contains("c"))
+        cfg.c = fsa["c"];
+    if (fsa.contains("k"))
+        cfg.k = fsa["k"];
+    if (fsa.contains("max_iter"))
+        cfg.max_iter = fsa["max_iter"];
+    if (fsa.contains("max_consecutive_reject"))
+        cfg.max_consecutive_reject = fsa["max_consecutive_reject"];
+    if (fsa.contains("min_temp"))
+        cfg.min_temp = fsa["min_temp"];
+    if (fsa.contains("sample_size"))
+        cfg.sample_size = fsa["sample_size"];
+    if (fsa.contains("ewma_alpha"))
+        cfg.ewma_alpha = fsa["ewma_alpha"];
+    if (fsa.contains("max_seconds_divisor"))
+        cfg.max_seconds_divisor = fsa["max_seconds_divisor"];
+    return cfg;
+}
+
+SawTooth_FastSA_config load_SawTooth_FastSA_config_from_json(const json &j)
+{
+    SawTooth_FastSA_config cfg;
+    if (!j.contains("SawTooth_FastSA"))
+        return cfg;
+    const auto &stfsa = j["SawTooth_FastSA"];
+    if (stfsa.contains("REHEAT_BETA"))
+        cfg.REHEAT_BETA = stfsa["REHEAT_BETA"];
+    if (stfsa.contains("REHEAT_DECAY"))
+        cfg.REHEAT_DECAY = stfsa["REHEAT_DECAY"];
+    if (stfsa.contains("REHEAT_THRESHOLD"))
+        cfg.REHEAT_THRESHOLD = stfsa["REHEAT_THRESHOLD"];
+    if (stfsa.contains("REHEAT_ROLLBACK_RATIO"))
+        cfg.REHEAT_ROLLBACK_RATIO = stfsa["REHEAT_ROLLBACK_RATIO"];
+    if (stfsa.contains("P"))
+        cfg.P = stfsa["P"];
+    if (stfsa.contains("c"))
+        cfg.c = stfsa["c"];
+    if (stfsa.contains("k"))
+        cfg.k = stfsa["k"];
+    if (stfsa.contains("max_iter"))
+        cfg.max_iter = stfsa["max_iter"];
+    if (stfsa.contains("max_consecutive_reject"))
+        cfg.max_consecutive_reject = stfsa["max_consecutive_reject"];
+    if (stfsa.contains("min_temp"))
+        cfg.min_temp = stfsa["min_temp"];
+    if (stfsa.contains("sample_size"))
+        cfg.sample_size = stfsa["sample_size"];
+    if (stfsa.contains("ewma_alpha"))
+        cfg.ewma_alpha = stfsa["ewma_alpha"];
+    if (stfsa.contains("max_seconds_divisor"))
+        cfg.max_seconds_divisor = stfsa["max_seconds_divisor"];
+    return cfg;
+}
+
+GMS_FastSA_config load_GMS_FastSA_config_from_json(const json &j)
+{
+    GMS_FastSA_config cfg;
+    if (!j.contains("GMS_FastSA"))
+        return cfg;
+    const auto &gfsa = j["GMS_FastSA"];
+    if (gfsa.contains("prob_rotate"))
+        cfg.prob_rotate = gfsa["prob_rotate"];
+    if (gfsa.contains("prob_swap"))
+        cfg.prob_swap = gfsa["prob_swap"];
+    if (gfsa.contains("prob_move"))
+        cfg.prob_move = gfsa["prob_move"];
+    if (gfsa.contains("bias_explore_ratio"))
+        cfg.bias_explore_ratio = gfsa["bias_explore_ratio"];
+    if (gfsa.contains("P"))
+        cfg.P = gfsa["P"];
+    if (gfsa.contains("c"))
+        cfg.c = gfsa["c"];
+    if (gfsa.contains("k"))
+        cfg.k = gfsa["k"];
+    if (gfsa.contains("max_iter"))
+        cfg.max_iter = gfsa["max_iter"];
+    if (gfsa.contains("max_consecutive_reject"))
+        cfg.max_consecutive_reject = gfsa["max_consecutive_reject"];
+    if (gfsa.contains("min_temp"))
+        cfg.min_temp = gfsa["min_temp"];
+    if (gfsa.contains("sample_size"))
+        cfg.sample_size = gfsa["sample_size"];
+    if (gfsa.contains("ewma_alpha"))
+        cfg.ewma_alpha = gfsa["ewma_alpha"];
+    if (gfsa.contains("max_seconds_divisor"))
+        cfg.max_seconds_divisor = gfsa["max_seconds_divisor"];
+    return cfg;
+}
+
 int main(int argc, char **argv)
 {
     // 默认算法模式
     int algo_mode = 0; // 0: 原始, 1: GMS, ...
     bool curve_mode = false;
+    std::string config_file;
 
-    // 1. 扫描所有参数，提取 --algo 或 -a
-    vector<string> args; // 存储非选项参数
+    // 1. 扫描所有参数
+    std::vector<std::string> args; // 存储非选项参数
     for (int i = 1; i < argc; i++)
     {
-        if (strcmp(argv[i], "--algo") == 0 || strcmp(argv[i], "-a") == 0)
+        if ((strcmp(argv[i], "--algo") == 0 || strcmp(argv[i], "-a") == 0) && i + 1 < argc)
         {
-            if (i + 1 < argc)
-            {
-                algo_mode = atoi(argv[i + 1]);
-                i++; // 跳过值
-            }
-            else
-            {
-                cerr << "错误: --algo 选项需要指定一个整数参数 (0, 1, 2, ...)" << endl;
-                return 1;
-            }
+            algo_mode = atoi(argv[++i]);
         }
         else if (strcmp(argv[i], "--curve") == 0 || strcmp(argv[i], "-c") == 0)
         {
             curve_mode = true;
-            // 如果希望带参数，如 --curve=1，可另写解析逻辑，这里简单开关
+        }
+        else if (strcmp(argv[i], "--config") == 0 && i + 1 < argc)
+        {
+            config_file = argv[++i];
         }
         else
         {
@@ -2720,6 +2932,7 @@ int main(int argc, char **argv)
     string floorplan_file = args[3];
     white_space_ratio = atof(args[4].c_str());
 
+    // 种子设置
     unsigned int seed;
     if (args.size() >= 6)
     {
@@ -2730,7 +2943,21 @@ int main(int argc, char **argv)
         seed = GetRandomSeed();
     }
 
-    // 4. 显示选择的算法模式（可选）
+    // 4. 加载 JSON 配置文件（如果提供了）
+    json j;
+    if (!config_file.empty())
+    {
+        std::ifstream ifs(config_file);
+        if (!ifs.is_open())
+        {
+            std::cerr << "Error: 无法打开配置文件: " << config_file << std::endl;
+            return 1;
+        }
+        ifs >> j;
+        std::cout << "Loaded config from: " << config_file << std::endl;
+    }
+
+    // 5. 显示选择的算法模式（可选）
     cout << "Algorithm mode: " << algo_mode << endl;
 
     ReadHardblocksFile(hardblocks_file);
@@ -2743,54 +2970,64 @@ int main(int argc, char **argv)
     BuildInitBtree(); // 随机化建立树
     // InitBtree();
 
-    // 5. 根据模式调用不同算法
+    // 6. 根据模式调用不同算法
     // 注意：读取文件、构建初始解等公共部分应该提前完成，这里只调用求解函数
     // 假设读取数据的函数已经调用，或者已经全局可用
     switch (algo_mode)
     {
+    case 0: // 原始 SA
+    {
+        SA_config cfg = load_SA_config_from_json(j);
+        SimulatedAnnealing(cfg);
+        break;
+    }
     case 1: // GMS
     {
-        GMS_config gms_cfg;
-        SimulatedAnnealing_GMS(gms_cfg);
+        GMS_config cfg = load_GMS_config_from_json(j);
+        SimulatedAnnealing_GMS(cfg);
         break;
     }
     case 2: // FastSA
     {
-        FastSA_config fastsa_cfg;
-        FastSA(fastsa_cfg);
+        FastSA_config cfg = load_FastSA_config_from_json(j);
+        FastSA(cfg);
         break;
     }
     case 3: // GMS_FastSA
     {
-        GMS_FastSA_config gms_fastsa_cfg;
-        GMS_FastSA(gms_fastsa_cfg);
+        GMS_FastSA_config cfg = load_GMS_FastSA_config_from_json(j);
+        GMS_FastSA(cfg);
         break;
     }
-    case 4: // GMS_FastSA
+    case 4: // SawTooth_FastSA
     {
-        SawTooth_FastSA_config sawtooth_fastsa_cfg;
-        SawTooth_FastSA(sawtooth_fastsa_cfg);
+        SawTooth_FastSA_config cfg = load_SawTooth_FastSA_config_from_json(j);
+        SawTooth_FastSA(cfg);
         break;
     }
     case 5: // GMS_DoubleMatrix
     {
-        GMS_DoubleMatrix_config gms_dmatrix_cfg;
-        GMS_DoubleMatrix(gms_dmatrix_cfg);
+        GMS_DoubleMatrix_config cfg = load_GMS_DoubleMatrix_config_from_json(j);
+        GMS_DoubleMatrix(cfg);
         break;
     }
-    default: // 默认算法
+    default:
     {
-        SA_config sa_cfg;
-        SimulatedAnnealing(sa_cfg);
+        SA_config cfg = load_SA_config_from_json(j);
+        SimulatedAnnealing(cfg);
         break;
     }
     }
 
     // 输出文件
     if (in_fixed_outline)
-        OutputFloorplan(floorplan_file, min_cost_fixed_outline.wirelength, min_cost_floorplan_fixed_outline);
+        OutputFloorplan(floorplan_file, min_cost_fixed_outline.wirelength,
+                        min_cost_floorplan_fixed_outline,
+                        min_cost_btree_fixed_outline, min_cost_root_block_fixed_outline);
     else
-        OutputFloorplan(floorplan_file, min_cost.wirelength, min_cost_floorplan);
+        OutputFloorplan(floorplan_file, min_cost.wirelength,
+                        min_cost_floorplan,
+                        min_cost_btree, min_cost_root_block);
 
     return 0;
 }
