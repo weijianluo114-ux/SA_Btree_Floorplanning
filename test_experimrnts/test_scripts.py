@@ -283,7 +283,14 @@ def compute_stats_from_table(table_data):
                   "BTree_T_us", "SA_T_s", "Feasible"]
 
     for col_idx, col_name in enumerate(col_names, start=2):
-        values = [row[col_idx] for row in table_data if row[col_idx] is not None]
+        # Feasible 单独处理：统计全部 run（反映真实成功率）
+        if col_name == "Feasible":
+            values = [row[col_idx] for row in table_data if row[col_idx] is not None]
+        # values = [row[col_idx] for row in table_data if row[col_idx] is not None]
+        # 改后：
+        else:
+            values = [row[col_idx] for row in table_data 
+                    if row[col_idx] is not None and row[-1] == 1]
         if values:
             mean_val = statistics.mean(values)
             variance_val = statistics.stdev(values) if len(values) > 1 else 0.0
@@ -654,7 +661,9 @@ def run_tuning(args):
         feas_rate = (found_cnt / num_runs_per_value * 100) if found_cnt is not None else 0
         all_summary[param_val] = {"mean_cost": cost_mean, "feas_rate": feas_rate}
 
-        print(f"  → 平均 Cost={cost_mean:.4f}, 可行解率={feas_rate:.0f}%")
+        # 改后
+        cost_str = f"{cost_mean:.4f}" if cost_mean is not None else "N/A"
+        print(f"  → 平均 Cost={cost_str}, 可行解率={feas_rate:.0f}%")
 
     # ========== 7. 整体汇总表格 ==========
     print(f"\n{'='*70}")
@@ -684,7 +693,7 @@ def run_tuning(args):
 
     # ========== 8. 清理临时 JSON 配置文件 ==========
     import glob
-    for f in glob.glob(str(config_dir / f"tune{algo_tag}_{param_name}_*.json")):
+    for f in glob.glob(str(config_dir / f"tune_*.json")):
         try:
             os.unlink(f)
         except OSError:
@@ -724,7 +733,7 @@ def main():
     # 日志文件（原始输出）
     log_file = resolve_log_file(script_dir, args, timestamp)
 
-    # 结果 CSV 文件
+    # # 结果 CSV 文件
     # if args.results_csv is None:
     #     results_csv = script_dir / f"./results/n_runs_result/results_{args.num_runs}{algo_tag}_{timestamp}.csv"
     # else:
@@ -836,7 +845,7 @@ def main():
             # 终端显示进度
             print(f"[{run_idx}/{args.num_runs}] seed={seed} 完成 (返回码 {retcode})")
 
-    # 写入 CSV 表格
+    # # 写入 CSV 表格
     # with open(results_csv, "w", newline="") as csvfile:
     #     writer = csv.writer(csvfile)
     #     writer.writerow([

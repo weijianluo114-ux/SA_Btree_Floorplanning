@@ -279,7 +279,7 @@ python test_scripts.py --num_runs 30 --white_space_ratio 0.1 -a 3
 
 ```bash
 # 先创建 tune_config.yaml（见上方示例）
-python test_scripts.py --tune tune_config.yaml --white_space_ratio 0.1
+python test_scripts.py --tune ./config/tune_config.yaml --white_space_ratio 0.1
 ```
 
 ### 8. 调优 + 曲线记录（探索收敛行为）

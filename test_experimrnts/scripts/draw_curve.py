@@ -18,7 +18,7 @@ import numpy as np
 from matplotlib.collections import LineCollection
 
 
-DPI = 300   #全局图像DPI
+DPI = 400   #全局图像DPI
 
 # 设置中文字体（避免中文标签乱码，可选）
 plt.rcParams['font.sans-serif'] = ['SimHei', 'DejaVu Sans']  # 或 'WenQuanYi Zen Hei'
@@ -59,7 +59,22 @@ def find_latest_csv(results_dir: Path) -> Path:
     latest = max(csv_files, key=extract_timestamp)
     return latest
 
-def process_single_csv(csv_path: Path, output_dir: Path, suffix: str, sample_step: int = 100, algo=0):
+def find_latest_tune_dir(results_dir: Path) -> Path:
+    """扫描 curve_results 目录，找到最新的 tune_* 子文件夹"""
+    subdirs = [d for d in results_dir.iterdir() if d.is_dir() and d.name.startswith("tune_")]
+    if not subdirs:
+        raise FileNotFoundError(f"在 {results_dir} 中未找到任何 tune_* 子文件夹")
+    def extract_timestamp(path: Path) -> datetime:
+        name = path.name
+        m = re.search(r"(\d{4}-\d{2}-\d{2}_\d{2}:\d{2}:\d{2})", name)
+        if m:
+            return datetime.strptime(m.group(1), "%Y-%m-%d_%H:%M:%S")
+        return datetime.fromtimestamp(path.stat().st_mtime)
+    latest = max(subdirs, key=extract_timestamp)
+    return latest
+
+def process_single_csv(csv_path, output_dir, suffix, sample_step=100, algo=0,
+                       n_top=0, n_back=0):
     """处理单个CSV文件，绘制所有曲线，输出到 output_dir"""
     output_dir.mkdir(parents=True, exist_ok=True)
     if suffix is None:
@@ -72,20 +87,42 @@ def process_single_csv(csv_path: Path, output_dir: Path, suffix: str, sample_ste
         if col not in df.columns:
             raise ValueError(f"CSV 文件中缺少列: {col}")
 
+    metrics = ['width', 'height', 'area', 'wirelength', 'R', 'cost']
+    def _plot_all_for_df(df, suffix, output_dir, sample_step, algo):
+        """绘制一个 DataFrame 的所有标准曲线（单指标图 + 总图）"""
+        # ... 从原 process_single_csv 中提取的代码 ...
+        for m in metrics:
+            plot_single_metric(df, m, 'Total_Moves', suffix, output_dir,
+                            logy=False, sample_step=sample_step, algo=algo)
+        plot_single_metric(df, 'T', 'Total_Moves', suffix, output_dir,
+                        logy=True, sample_step=sample_step, algo=algo)
+        plot_all_metrics_subplots(df, 'Total_Moves', suffix, output_dir, algo=algo)
+
+
     # 1. 单独线性图
     print("绘制单个指标线性图...")
-    metrics = ['width', 'height', 'area', 'wirelength', 'R', 'cost']
-    for m in metrics:
-        plot_single_metric(df, m, 'Total_Moves', suffix, output_dir, logy=False, sample_step=sample_step, algo=algo)
-
-    plot_single_metric(df, 'T', 'Total_Moves', suffix, output_dir, logy=True, sample_step=sample_step, algo=algo)
-    # 2. 总图（对数Y轴）
-    print("绘制总图（对数Y轴子图）...")
-    plot_all_metrics_subplots(df, 'Total_Moves', suffix, output_dir, algo=algo)
+    _plot_all_for_df(df, suffix, output_dir, sample_step, algo)
 
     # 3. 温度行为图
     # print("绘制温度行为图...")
     # plot_temperature_behaviors(df, suffix, output_dir, n_front=2, n_back=2, algo=algo)
+    
+    # 2. 前 N 行
+    if n_top > 0:
+        n_top_actual = min(n_top, len(df))
+        print(f"绘制前 {n_top_actual} 个数据点曲线...")
+        df_first = df.head(n_top_actual)
+        _plot_all_for_df(df_first, f"{suffix}_first{n_top_actual}",
+                        output_dir, sample_step=1, algo=algo)  
+        # sample_step=1 避免过采样导致子集点太少
+
+    # 3. 后 N 行
+    if n_back > 0:
+        n_back_actual = min(n_back, len(df))
+        print(f"绘制后 {n_back_actual} 个数据点曲线...")
+        df_last = df.tail(n_back_actual)
+        _plot_all_for_df(df_last, f"{suffix}_last{n_back_actual}",
+                        output_dir, sample_step=1, algo=algo)
 
 def plot_single_metric(df, metric, x_col, suffix, output_dir, logy=False, sample_step=100, algo=0):
     """
@@ -132,8 +169,8 @@ def plot_single_metric(df, metric, x_col, suffix, output_dir, logy=False, sample
 
     ax.set_xlabel('Total Moves')
     ax.set_ylabel(metric)
-    ax.set_title(f'{metric} vs Total Moves (line color = log10(T), sampled every {sample_step})(alog{algo})')
-    ax.grid(True, alpha=0.3)
+    # ax.set_title(f'{metric} vs Total Moves (line color = log10(T), sampled every {sample_step})(alog{algo})')
+    # ax.grid(True, alpha=0.3)
 
     # 添加 colorbar，显示真实温度值
     cbar = plt.colorbar(lc, ax=ax, ticks=np.linspace(vmin_log, vmax_log, 5))
@@ -185,7 +222,7 @@ def plot_all_metrics_subplots(df, x_col, suffix, output_dir, sample_step=100, al
         ax.set_xlabel('Total Moves')
         ax.set_ylabel(metric)
         ax.set_title(f'{metric} (log scale, color=log10(T))')
-        ax.grid(True, alpha=0.3)
+        # ax.grid(True, alpha=0.3)
 
         line_collections.append(lc)
 
@@ -264,6 +301,69 @@ def plot_temperature_behaviors(df, suffix, output_dir, n_front=5, n_back=5, algo
         plt.close()
         print(f"已保存: {filepath}")
 
+def plot_rejection_rates(csv_files, output_dir, algo=0, n_top=60):
+    """
+    绘制多个CSV文件的前 n_top 个最高温度的拒绝率散点图（同一张图）。
+    拒绝率 = T_reject / T_Moves（取每个温度最后一行的累计值）。
+    不同CSV文件用不同颜色区分。
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # 使用 tab10 colormap 区分不同文件
+    import matplotlib.cm as cm
+    colors = cm.tab10(np.linspace(0, 1, len(csv_files)))
+
+    plt.figure(figsize=(14, 8))
+
+    for idx, csv_path in enumerate(csv_files):
+        df = pd.read_csv(csv_path)
+        # 过滤零温度
+        df = df[df['T'] != 0].copy()
+
+        if df.empty:
+            print(f"警告: {csv_path.name} 无有效非零温度数据，跳过")
+            continue
+
+        # 按温度分组，取每个温度的最后一行（累计的最终值）
+        last_rows = df.groupby('T').last().reset_index()
+
+        # 计算拒绝率
+        last_rows['rejection_rate'] = last_rows['T_reject'] / last_rows['T_Moves']
+
+        # 取前 n_top 个最高温度
+        top_rows = last_rows.nlargest(n_top, 'T')
+
+        # 按温度升序排列（图表从左到右温度降低）
+        top_rows = top_rows.sort_values('T', ascending=True)
+
+        # 用文件名中的 runX 作为图例标签
+        run_match = re.search(r'run(\d+)', csv_path.stem)
+        label = f"run{run_match.group(1)}" if run_match else csv_path.stem
+
+        plt.scatter(top_rows['T'], top_rows['rejection_rate'],
+                    color=colors[idx], label=label, alpha=0.7, s=100,
+                    edgecolors='k', linewidths=0.3)
+
+        print(f"  [{idx}] {label}: {len(top_rows)} 个温度点")
+
+    plt.xlabel('Temperature', fontsize=18)
+    plt.ylabel('Rejection Rate (T_reject / T_Moves)', fontsize=18)
+    # plt.title(f'Rejection Rate vs Temperature (Top {n_top} Temps, algo{algo})', fontsize=18)
+    # plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8)
+    plt.legend(loc='upper right', fontsize=14)
+    # plt.grid(True, alpha=0.9)
+    # 温度通常跨越多个数量级，使用对数横轴
+    plt.xscale('log')
+    # 拒绝率范围在 [0,1] 之间
+    plt.ylim(-0.02, 1.02)
+
+    plt.tight_layout()
+    filename = f"rejection_rates_top{n_top}_algo{algo}.png"
+    filepath = output_dir / filename
+    plt.savefig(filepath, dpi=DPI, bbox_inches='tight')
+    plt.close()
+    print(f"已保存: {filepath}")
+
 # ---------- 主函数 ----------
 def main():
     parser = argparse.ArgumentParser(description="批量绘制模拟退火曲线（支持多个run文件）")
@@ -273,11 +373,96 @@ def main():
     parser.add_argument("--output_dir", type=str, default=None,
                         help="图片输出根目录（默认 ./results/curve_figures）。每个run的图片会放在该目录下的子文件夹中。")
     parser.add_argument("--sample_step", type=int, default=100,
-                    help="绘图时每多少点采样一次（默认100）")
+                        help="绘图时每多少点采样一次（默认100）")
+    parser.add_argument("--rejection-rate", nargs='?', const='auto', default=None,
+                        help="绘制拒绝率图：指定包含 curve_data_run*.csv 的目录路径，"
+                         "会读取该目录下所有CSV文件并绘制在同一张散点图上。"
+                         "纵轴=T_reject/T_Moves，横轴=温度，取前60个最高温度。")
+    parser.add_argument("--rr-n-top", type=int, default=60,
+                        help="与 --rejection-rate 配合使用...")
+    # 新增
+    parser.add_argument("--n_top", type=int, default=0,
+                        help="额外绘制前 N 个数据点的曲线图（若超出总行数则绘制全部）")
+    parser.add_argument("--n_back", type=int, default=0,
+                        help="额外绘制后 N 个数据点的曲线图（若超出总行数则绘制全部）")
+    parser.add_argument("--tune", nargs='?', const='auto', default=None,
+                        help="调优模式：读取最新 tune_* 文件夹下所有 param_*/curve_data.csv 并绘图。"
+                         "可指定具体路径，或留空自动选择最新。")
     args = parser.parse_args()
 
     script_dir = Path(__file__).resolve().parent
     results_curve_root = script_dir / "../results/curve_results"
+
+    # ----- 调优模式（tune）-----
+    if args.tune is not None:
+        if args.tune == 'auto':
+            tune_dir = find_latest_tune_dir(results_curve_root)
+        else:
+            tune_dir = Path(args.tune)
+            if not tune_dir.is_dir():
+                raise FileNotFoundError(f"调优目录不存在: {tune_dir}")
+
+        print(f"调优模式: 读取 {tune_dir}")
+
+        csv_files_tune = sorted(tune_dir.glob("param_*/curve_data.csv"))
+        if not csv_files_tune:
+            raise FileNotFoundError(f"在 {tune_dir} 中未找到任何 param_*/curve_data.csv 文件")
+
+        print(f"找到 {len(csv_files_tune)} 个参数 CSV 文件")
+
+        if args.output_dir:
+            tune_output = Path(args.output_dir)
+        else:
+            tune_output = script_dir / "../results/curve_figures" / tune_dir.name
+        tune_output.mkdir(parents=True, exist_ok=True)
+
+        for csv_path in csv_files_tune:
+            param_name = csv_path.parent.name  # e.g. "param_stagnation_limit100"
+            output_subdir = tune_output / param_name
+            output_subdir.mkdir(parents=True, exist_ok=True)
+
+            algo_match = re.search(r'algo(\d+)', tune_dir.name)
+            algo = int(algo_match.group(1)) if algo_match else 0
+
+            process_single_csv(csv_path, output_subdir, suffix=param_name,
+                               sample_step=args.sample_step, algo=algo,
+                               n_top=args.n_top, n_back=args.n_back)
+
+        print("调优模式绘图完成！")
+        return
+
+    # ----- 拒绝率图模式 -----
+    if args.rejection_rate is not None:
+        if args.rejection_rate == 'auto':
+            # 自动使用最新时间戳文件夹
+            latest_dir = find_latest_csv_dir(results_curve_root)
+            rr_dir = latest_dir
+            print(f"拒绝率图模式: 自动选择最新文件夹 {rr_dir}")
+        else:
+            rr_dir = Path(args.rejection_rate)
+            if not rr_dir.is_dir():
+                raise FileNotFoundError(f"拒绝率图路径不是有效目录: {rr_dir}")
+        
+        csv_files_rr = sorted(rr_dir.glob("curve_data_run*.csv"))
+        if not csv_files_rr:
+            raise FileNotFoundError(f"在 {rr_dir} 中未找到 curve_data_run*.csv 文件")
+        
+        print(f"拒绝率图模式: 从 {rr_dir} 读取到 {len(csv_files_rr)} 个CSV文件")
+        
+        # 从文件夹名提取 algo 编号（如果文件名中有 algo 信息）
+        algo_match = re.search(r'algo(\d+)', rr_dir.name)
+        algo_rr = int(algo_match.group(1)) if algo_match else 0
+        
+        # 输出目录
+        if args.output_dir:
+            rr_output = Path(args.output_dir)
+        else:
+            rr_output = script_dir / "../results/curve_figures" / rr_dir.name
+        rr_output.mkdir(parents=True, exist_ok=True)
+        
+        plot_rejection_rates(csv_files_rr, rr_output, algo=algo_rr, n_top=args.rr_n_top)
+        print("拒绝率图绘制完成！")
+        return
 
     # ----- 确定要处理的CSV文件列表 -----
     csv_files = []
@@ -345,7 +530,8 @@ def main():
 
         # 调用处理函数
         process_single_csv(csv_path, output_subdir, suffix=csv_path.stem,
-                        sample_step=args.sample_step, algo=algo)
+                   sample_step=args.sample_step, algo=algo,
+                   n_top=args.n_top, n_back=args.n_back)
 
     print("全部绘图完成！")
 

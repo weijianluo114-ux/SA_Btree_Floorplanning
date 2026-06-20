@@ -4,6 +4,11 @@ hw3
 hw3_gdb
 *.o
 log/
+log_bak/
 results/
-seeds/
+test_experiments/seeds/
+AI_experiments.md
+Arguments.md
+experiment.md
+*.json
 tmp/

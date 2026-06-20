@@ -40,7 +40,7 @@ struct SA_config
     int max_seconds_divisor = 10; // 阶段超时: max_seconds = (n / divisor)^2
     int time_limit = 1195;        // 总运行时间上限 (秒)
     // 操作概率 (当前为均匀 rand()%3，可扩展)
-    double op_prob[3] = {0.1, 0.8, 0.1};
+    double op_prob[3] = {1.0 / 3, 1.0 / 3, 1.0 / 3};
     double t0_block_divisor = 100.0; // T0 = -cost * (n / divisor) / log(P)
 };
 
@@ -55,7 +55,7 @@ struct GMS_config
     double bias_explore_ratio = 0.1; // 纯随机探索概率
     // SA 参数
     double P = 0.95;           // 初始接受概率，用于计算 T0
-    double r = 0.60;           // 温度衰减系数
+    double r = 0.85;           // 温度衰减系数
     double epsilon = 0.0001;   // 最低温度阈值
     double reject_rate = 0.99; // 最大拒绝率
     int k = 40;                // 每块试探次数系数 (N = k * num_hardblocks)
@@ -77,7 +77,7 @@ struct GMS_DoubleMatrix_config
     double bias_explore_ratio = 0.1; // 纯随机探索概率
     // SA 参数
     double P = 0.95;           // 初始接受概率，用于计算 T0
-    double r = 0.8;            // 温度衰减系数
+    double r = 0.85;           // 温度衰减系数
     double epsilon = 0.0001;   // 最低温度阈值
     double reject_rate = 0.99; // 最大拒绝率
     int k = 40;                // 每块试探次数系数 (N = k * num_hardblocks)
@@ -91,6 +91,7 @@ struct GMS_DoubleMatrix_config
 // ========== FastSA 算法配置 ==========
 struct FastSA_config
 {
+    double t1_amplify = 100.0;         // T1 放大系数: T1 = t1_amplify * |Δavg / ln(P)|
     double P = 0.95;                   // 初始接受概率，用于计算 T1
     double c = 100.0;                  // 论文推荐 c=100
     int k = 7;                         // 论文推荐 k=7
@@ -98,37 +99,18 @@ struct FastSA_config
     int max_consecutive_reject = 5000; // 连续拒绝阈值
     double min_temp = 1e-9;            // 最低温度阈值
     int sample_size = 1000;            // 预采样大小
-    double ewma_alpha = 0.1;           // EWMA 平滑系数
-    int max_seconds_divisor = 10;      // 阶段超时: max_seconds = (n / divisor)^2
-};
-
-// ========== SawTooth_FastSA 算法配置 ==========
-struct SawTooth_FastSA_config
-{
-    // 新参数定义
-    double REHEAT_BETA = 0.5;           // 初始回火幅度
-    double REHEAT_DECAY = 0.9;          // 回火幅度衰减
-    int REHEAT_THRESHOLD = 200;         // 连续拒绝阈值
-    double REHEAT_ROLLBACK_RATIO = 0.5; // 回火时 n 回退比例
-
-    double P = 0.95;                   // 初始接受概率，用于计算 T1
-    double c = 100.0;                  // 论文推荐 c=100
-    int k = 7;                         // 论文推荐 k=7
-    int max_iter = 200000;             // 最大迭代次数（安全上限）
-    int max_consecutive_reject = 5000; // 连续拒绝阈值
-    double min_temp = 1e-9;            // 最低温度阈值
-    int sample_size = 1000;            // 预采样大小
-    double ewma_alpha = 0.1;           // EWMA 平滑系数
+    double ewma_alpha = 0.4;           // EWMA 平滑系数
     int max_seconds_divisor = 10;      // 阶段超时: max_seconds = (n / divisor)^2
 };
 
 // ========== GMS_FastSA 算法配置 ==========
 struct GMS_FastSA_config
 {
+    double t1_amplify = 100.0;
     // GMS 偏置选择参数
-    double prob_rotate = 0.33;
-    double prob_swap = 0.34;
-    double prob_move = 0.33;
+    double prob_rotate = 0.1;
+    double prob_swap = 0.8;
+    double prob_move = 0.1;
     double bias_explore_ratio = 0.1;
 
     // FastSA 温度调度参数
@@ -139,24 +121,51 @@ struct GMS_FastSA_config
     int max_consecutive_reject = 5000;
     double min_temp = 1e-9;
     int sample_size = 1000;
-    double ewma_alpha = 0.1;
+    double ewma_alpha = 0.4;
     int max_seconds_divisor = 10;
+};
+
+// ========== SawTooth_FastSA 算法配置 ==========
+struct SawTooth_FastSA_config
+{
+    double t1_amplify = 100.0;
+
+    // ——— 新增 ———
+    int stagnation_limit = 250; // 连续无改进的迭代次数阈值，触发回火
+
+    // 新参数定义
+    double REHEAT_DECAY = 0.9;          // 回火幅度衰减
+    int REHEAT_THRESHOLD = 100;         // 连续拒绝阈值
+    double REHEAT_ROLLBACK_RATIO = 0.6; // 回火时 n 回退比例
+
+    double P = 0.95;                   // 初始接受概率，用于计算 T1
+    double c = 100.0;                  // 论文推荐 c=100
+    int k = 7;                         // 论文推荐 k=7
+    int max_iter = 200000;             // 最大迭代次数（安全上限）
+    int max_consecutive_reject = 5000; // 连续拒绝阈值
+    double min_temp = 1e-9;            // 最低温度阈值
+    int sample_size = 1000;            // 预采样大小
+    double ewma_alpha = 0.4;           // EWMA 平滑系数
+    int max_seconds_divisor = 10;      // 阶段超时: max_seconds = (n / divisor)^2
 };
 
 // ========== GMS_SawTooth_FastSA 算法配置 ==========
 struct GMS_SawTooth_FastSA_config
 {
+    double t1_amplify = 100.0;
     // GMS 偏置选择参数
-    double prob_rotate = 0.33;
-    double prob_swap = 0.34;
-    double prob_move = 0.33;
+    double prob_rotate = 0.1;
+    double prob_swap = 0.8;
+    double prob_move = 0.1;
     double bias_explore_ratio = 0.1;
 
+    // ——— 新增 ———
+    int stagnation_limit = 200; // 连续无改进的迭代次数阈值，触发回火
+
     // SawTooth_FastSA 参数
-    double REHEAT_BETA = 0.5;
     double REHEAT_DECAY = 0.9;
     int REHEAT_THRESHOLD = 200;
-    double REHEAT_ROLLBACK_RATIO = 0.5;
+    double REHEAT_ROLLBACK_RATIO = 0.6;
 
     double P = 0.95;
     double c = 100.0;
@@ -165,7 +174,7 @@ struct GMS_SawTooth_FastSA_config
     int max_consecutive_reject = 5000;
     double min_temp = 1e-9;
     int sample_size = 1000;
-    double ewma_alpha = 0.1;
+    double ewma_alpha = 0.4;
     int max_seconds_divisor = 10;
 };
 
@@ -555,8 +564,8 @@ Cost CalculateCost()
     // area of current floorplan
     double floorplan_area = width * height; // 计算当前 floorplan 的面积。这里用的是外包矩形面积，不是所有块真实面积之和。
     // aspect ratio of current floorplan
-    double R = (double)height / width; // 计算当前版图的长宽比，这里会导致不对称输出，故要更正
-    // double R = (double)min(height, width) / max(height, width); // 更新后的R计算方式
+    // double R = (double)height / width; // 计算当前版图的长宽比，这里会导致不对称输出，故要更正
+    double R = (double)min(height, width) / max(height, width); // 更新后的R计算方式
 
     // half perimeter wire length   半周长线长
     double wirelength = 0;              // 初始化半周长线长的累加值。后面会遍历每一条 net，把每条 net 的 HPWL 加到这里。
@@ -620,6 +629,10 @@ Cost CalculateCost()
     // 先把宽和高的越界惩罚初始化为 0，默认不惩罚。
     double width_penalty = 0;
     double height_penalty = 0;
+    // if (width > W) // 如果当前版图宽度超过固定边界 W，就加宽度惩罚。超得越多，这项越大。
+    //     width_penalty = ((double)width / W);
+    // if (height > W)
+    //     height_penalty = ((double)height / W);
     if (width > W) // 如果当前版图宽度超过固定边界 W，就加宽度惩罚。超得越多，这项越大。
         width_penalty = ((double)width / W);
     if (height > W)
@@ -1856,10 +1869,10 @@ void FastSA(const FastSA_config &cfg)
         hardblocks = hardblocks_bak;
         btree = btree_bak;
         root_block = root_block_bak;
-        CalculateCost();
+        // CalculateCost();
     }
     double delta_avg = (uphill_count > 0) ? (total_uphill / uphill_count) : 1.0;
-    double T1 = fabs(delta_avg / log(P));
+    double T1 = cfg.t1_amplify * fabs(delta_avg / log(P));
     // ----------------------------------------------------
 
     // 恢复原始状态
@@ -1867,7 +1880,7 @@ void FastSA(const FastSA_config &cfg)
     btree = btree_bak;
     root_block = root_block_bak;
     min_cost = min_cost_bak;
-    CalculateCost();
+    // CalculateCost();
 
     // -------------------- FASTSA 主循环 --------------------
     int iter = 0;                      // 全局迭代计数器
@@ -1947,6 +1960,7 @@ void FastSA(const FastSA_config &cfg)
         Cost cur_cost = CalculateCost();
         double delta_cost = cur_cost.cost - prev_cost.cost;
 
+        // ---------- 代价计算 + FastSA 温度更新 ----------
         // 更新平均代价变化
         avg_delta_cost = (1 - alpha) * avg_delta_cost + alpha * fabs(delta_cost);
 
@@ -2033,7 +2047,7 @@ void FastSA(const FastSA_config &cfg)
                 hardblocks = hardblocks_temp;
             else
                 btree = btree_temp;
-            CalculateCost();
+            // CalculateCost();
         }
 
         iter++;
@@ -2081,7 +2095,6 @@ void SawTooth_FastSA(const SawTooth_FastSA_config &cfg)
 
     // ==================== FASTSA 参数 ====================
     // 参数定义
-    const double REHEAT_BETA = cfg.REHEAT_BETA;   // 初始升温幅度（温度提高50%）
     const double REHEAT_DECAY = cfg.REHEAT_DECAY; // 幅度衰减系数
     const int REHEAT_THRESHOLD = cfg.REHEAT_THRESHOLD;
     const double REHEAT_ROLLBACK_RATIO = cfg.REHEAT_ROLLBACK_RATIO; // 连续拒绝达到此值触发升温
@@ -2144,10 +2157,10 @@ void SawTooth_FastSA(const SawTooth_FastSA_config &cfg)
         hardblocks = hardblocks_bak;
         btree = btree_bak;
         root_block = root_block_bak;
-        CalculateCost();
+        // CalculateCost();
     }
     double delta_avg = (uphill_count > 0) ? (total_uphill / uphill_count) : 1.0;
-    double T1 = fabs(delta_avg / log(P));
+    double T1 = cfg.t1_amplify * fabs(delta_avg / log(P));
     // ----------------------------------------------------
 
     // 恢复原始状态
@@ -2155,12 +2168,13 @@ void SawTooth_FastSA(const SawTooth_FastSA_config &cfg)
     btree = btree_bak;
     root_block = root_block_bak;
     min_cost = min_cost_bak;
-    CalculateCost();
+    // CalculateCost();
 
     // -------------------- FASTSA 主循环 --------------------
     int iter = 0;                      // 全局迭代计数器
     int temp_n = 1;                    // 温度公式中的 n（回火时回退）
     double avg_delta_cost = delta_avg; // 平均代价变化（EWMA）
+    int last_improve_iter = 0;         // 记录最近一次改进时的迭代号
     // new-------------------------------------------------
     T = T1; // 当前温度
     // new_end----------------------------------------------
@@ -2172,6 +2186,10 @@ void SawTooth_FastSA(const SawTooth_FastSA_config &cfg)
     const int max_seconds = (num_hardblocks / cfg.max_seconds_divisor) * (num_hardblocks / cfg.max_seconds_divisor);
     int seconds = 0;
     int consecutive_reject = 0; // 连续拒绝次数
+
+    // new-------------------------------------------------
+    int reheat_plus = 1;
+    // new_end----------------------------------------------
 
     // 主循环：不设总时间限制，仅靠停止条件退出
     while (true)
@@ -2236,7 +2254,6 @@ void SawTooth_FastSA(const SawTooth_FastSA_config &cfg)
 
         Cost cur_cost = CalculateCost();
         double delta_cost = cur_cost.cost - prev_cost.cost;
-
         // 更新平均代价变化
         avg_delta_cost = (1 - alpha) * avg_delta_cost + alpha * fabs(delta_cost);
 
@@ -2246,9 +2263,9 @@ void SawTooth_FastSA(const SawTooth_FastSA_config &cfg)
         {
             T = T1;
         }
-        else if (n <= k)
+        else if (n <= cfg.k)
         {
-            T = T1 * avg_delta_cost / (n * c);
+            T = T1 * avg_delta_cost / (n * cfg.c);
         }
         else
         {
@@ -2257,13 +2274,30 @@ void SawTooth_FastSA(const SawTooth_FastSA_config &cfg)
         if (T < MIN_TEMP)
             T = MIN_TEMP;
 
+        // // 回火逻辑：连续拒绝过多时，将 temp_n 往回卷，让温度回升
+        // if (consecutive_reject >= REHEAT_THRESHOLD && temp_n > 1)
+        // {
+        //     int rollback = max(1, (int)(temp_n * REHEAT_ROLLBACK_RATIO * pow(REHEAT_DECAY, reheat_count)));
+        //     temp_n = max(1, temp_n - rollback);
+        //     consecutive_reject = 0; // 重置计数器，重新尝试
+        //     reheat_count++;
+        //     // new----------------------------------------------
+        //     reheat_plus++;
+        //     // new_end----------------------------------------------
+        // }
+
         // 回火逻辑：连续拒绝过多时，将 temp_n 往回卷，让温度回升
-        if (consecutive_reject >= REHEAT_THRESHOLD && temp_n > 1)
+        if (iter - last_improve_iter > cfg.stagnation_limit && temp_n > 1)
         {
             int rollback = max(1, (int)(temp_n * REHEAT_ROLLBACK_RATIO * pow(REHEAT_DECAY, reheat_count)));
             temp_n = max(1, temp_n - rollback);
-            consecutive_reject = 0; // 重置计数器，重新尝试
+
+            // ——— 重要：回火后将 last_improve_iter 重置为当前 iter，避免立即再次回火 ———
+            last_improve_iter = iter;
             reheat_count++;
+            // new----------------------------------------------
+            reheat_plus++;
+            // new_end----------------------------------------------
         }
 
         double random = ((double)rand()) / RAND_MAX;
@@ -2277,6 +2311,10 @@ void SawTooth_FastSA(const SawTooth_FastSA_config &cfg)
             }
 #endif
             // new_end----------------------------------------------
+
+            // ——— 新增：当 cur_cost 优于 prev_cost 时，记录改进时刻 ———
+            if (delta_cost < 0) // 严格改进（cost 降低）
+                last_improve_iter = iter;
 
             // 接受新解
             prev_cost = cur_cost;
@@ -2312,6 +2350,7 @@ void SawTooth_FastSA(const SawTooth_FastSA_config &cfg)
                 min_cost = cur_cost;
                 min_cost_floorplan = hardblocks;
                 min_cost_btree = btree;
+                // last_improve_iter = iter; // ← 移到这里！
             }
         }
         else
@@ -2332,11 +2371,12 @@ void SawTooth_FastSA(const SawTooth_FastSA_config &cfg)
                 hardblocks = hardblocks_temp;
             else
                 btree = btree_temp;
-            CalculateCost();
+            // CalculateCost();
         }
 
         iter++;
-        temp_n++;
+        // temp_n++;
+        temp_n += reheat_plus;
         // ---------- 主动停止条件 ----------
         // 条件1：连续拒绝次数过多且温度很低（类似原算法的拒绝率很高且温度低）
         if (consecutive_reject >= MAX_CONSECUTIVE_REJECT && T <= MIN_TEMP)
@@ -2433,7 +2473,7 @@ void GMS_FastSA(const GMS_FastSA_config &cfg)
         CalculateCost();
     }
     double delta_avg = (uphill_count > 0) ? (total_uphill / uphill_count) : 1.0;
-    double T1 = fabs(delta_avg / log(cfg.P));
+    double T1 = cfg.t1_amplify * fabs(delta_avg / log(cfg.P));
 
     // 恢复原始状态
     hardblocks = hardblocks_bak;
@@ -2554,6 +2594,7 @@ void GMS_FastSA(const GMS_FastSA_config &cfg)
 
         // ---------- 代价计算 + FastSA 温度更新 ----------
         Cost cur_cost = CalculateCost();
+
         double delta_cost = cur_cost.cost - prev_cost.cost;
         avg_delta_cost = (1 - cfg.ewma_alpha) * avg_delta_cost + cfg.ewma_alpha * fabs(delta_cost);
 
@@ -2626,7 +2667,7 @@ void GMS_FastSA(const GMS_FastSA_config &cfg)
                 hardblocks = hardblocks_temp;
             else
                 btree = btree_temp;
-            CalculateCost();
+            // CalculateCost();
         }
 
         // ---------- GMS: 更新偏置矩阵 (非旋转操作) ----------
@@ -2721,24 +2762,26 @@ void GMS_SawTooth_FastSA(const GMS_SawTooth_FastSA_config &cfg)
         hardblocks = hardblocks_bak;
         btree = btree_bak;
         root_block = root_block_bak;
-        CalculateCost();
+        // CalculateCost();
     }
     double delta_avg = (uphill_count > 0) ? (total_uphill / uphill_count) : 1.0;
-    double T1 = fabs(delta_avg / log(cfg.P));
+    double T1 = cfg.t1_amplify * fabs(delta_avg / log(cfg.P));
 
     // 恢复原始状态
     hardblocks = hardblocks_bak;
     btree = btree_bak;
     root_block = root_block_bak;
     min_cost = min_cost_bak;
-    CalculateCost();
+    // CalculateCost();
 
     // ========== 主循环 (SawTooth_FastSA 结构 + GMS 偏置选择) ==========
     int iter = 0;
     int temp_n = 1;
     double avg_delta_cost = delta_avg;
     int reheat_count = 0;
+    // new-------------------------------------------------
     T = T1;
+    // new_end----------------------------------------------
     Cost prev_cost = min_cost;
     in_fixed_outline = false;
 
@@ -2747,6 +2790,11 @@ void GMS_SawTooth_FastSA(const GMS_SawTooth_FastSA_config &cfg)
     const int max_seconds = (num_hardblocks / cfg.max_seconds_divisor) * (num_hardblocks / cfg.max_seconds_divisor);
     int seconds = 0;
     int consecutive_reject = 0;
+
+    // new-------------------------------------------------
+    int reheat_plus = 1;
+    int last_improve_iter = 0; // ★★★ 新增：记录最近一次全局最优改进时刻 ★★★
+    // new_end----------------------------------------------
 
     while (true)
     {
@@ -2763,6 +2811,9 @@ void GMS_SawTooth_FastSA(const GMS_SawTooth_FastSA_config &cfg)
             T = T1;
             prev_cost = min_cost;
             consecutive_reject = 0;
+            // ★★★ 新增：超时重启也要重置回火相关变量 ★★★
+            last_improve_iter = 0;
+            reheat_count = 0;
         }
 
         // ---------- 保存状态 ----------
@@ -2860,12 +2911,27 @@ void GMS_SawTooth_FastSA(const GMS_SawTooth_FastSA_config &cfg)
             T = cfg.min_temp;
 
         // ---------- SawTooth 回火逻辑 ----------
-        if (consecutive_reject >= cfg.REHEAT_THRESHOLD && temp_n > 1)
+        // if (consecutive_reject >= cfg.REHEAT_THRESHOLD && temp_n > 1)
+        // {
+        //     int rollback = max(1, (int)(temp_n * cfg.REHEAT_ROLLBACK_RATIO * pow(cfg.REHEAT_DECAY, reheat_count)));
+        //     temp_n = max(1, temp_n - rollback);
+        //     consecutive_reject = 0;
+        //     reheat_count++;
+        // }
+        // 回火逻辑：基于 Stagnation + 搜索空间回退
+        if (iter - last_improve_iter > cfg.stagnation_limit && temp_n > 1)
         {
+            // 1. 回退 temp_n，温度回升
             int rollback = max(1, (int)(temp_n * cfg.REHEAT_ROLLBACK_RATIO * pow(cfg.REHEAT_DECAY, reheat_count)));
             temp_n = max(1, temp_n - rollback);
-            consecutive_reject = 0;
+
+            // 4. 重置所有计数器
+            // consecutive_reject = 0;
+            last_improve_iter = iter;
             reheat_count++;
+            // new----------------------------------------------
+            reheat_plus++;
+            // new_end----------------------------------------------
         }
 
         // ---------- Metropolis 接受准则 ----------
@@ -2879,6 +2945,10 @@ void GMS_SawTooth_FastSA(const GMS_SawTooth_FastSA_config &cfg)
             if (g_curve_mode && delta_cost > 0)
                 T_uphill++;
 #endif
+            // ——— 新增：当 cur_cost 优于 prev_cost 时，记录改进时刻 ———
+            // if (delta_cost < 0) // 严格改进（cost 降低）
+            //     last_improve_iter = iter;
+
             prev_cost = cur_cost;
             consecutive_reject = 0;
 
@@ -2910,6 +2980,7 @@ void GMS_SawTooth_FastSA(const GMS_SawTooth_FastSA_config &cfg)
                 min_cost = cur_cost;
                 min_cost_floorplan = hardblocks;
                 min_cost_btree = btree;
+                // last_improve_iter = iter;
             }
         }
         else
@@ -2925,7 +2996,7 @@ void GMS_SawTooth_FastSA(const GMS_SawTooth_FastSA_config &cfg)
                 hardblocks = hardblocks_temp;
             else
                 btree = btree_temp;
-            CalculateCost();
+            // CalculateCost();
         }
 
         // ---------- GMS: 更新偏置矩阵 (非旋转操作) ----------
@@ -3138,6 +3209,8 @@ FastSA_config load_FastSA_config_from_json(const json &j)
         cfg.ewma_alpha = fsa["ewma_alpha"];
     if (fsa.contains("max_seconds_divisor"))
         cfg.max_seconds_divisor = fsa["max_seconds_divisor"];
+    if (fsa.contains("t1_amplify"))
+        cfg.t1_amplify = fsa["t1_amplify"];
     return cfg;
 }
 
@@ -3147,8 +3220,6 @@ SawTooth_FastSA_config load_SawTooth_FastSA_config_from_json(const json &j)
     if (!j.contains("SawTooth_FastSA"))
         return cfg;
     const auto &stfsa = j["SawTooth_FastSA"];
-    if (stfsa.contains("REHEAT_BETA"))
-        cfg.REHEAT_BETA = stfsa["REHEAT_BETA"];
     if (stfsa.contains("REHEAT_DECAY"))
         cfg.REHEAT_DECAY = stfsa["REHEAT_DECAY"];
     if (stfsa.contains("REHEAT_THRESHOLD"))
@@ -3173,6 +3244,11 @@ SawTooth_FastSA_config load_SawTooth_FastSA_config_from_json(const json &j)
         cfg.ewma_alpha = stfsa["ewma_alpha"];
     if (stfsa.contains("max_seconds_divisor"))
         cfg.max_seconds_divisor = stfsa["max_seconds_divisor"];
+    if (stfsa.contains("t1_amplify"))
+        cfg.t1_amplify = stfsa["t1_amplify"];
+    // ——— 新增 ———
+    if (stfsa.contains("stagnation_limit"))
+        cfg.stagnation_limit = stfsa["stagnation_limit"];
     return cfg;
 }
 
@@ -3190,8 +3266,6 @@ GMS_SawTooth_FastSA_config load_GMS_SawTooth_FastSA_config_from_json(const json 
         cfg.prob_move = gst["prob_move"];
     if (gst.contains("bias_explore_ratio"))
         cfg.bias_explore_ratio = gst["bias_explore_ratio"];
-    if (gst.contains("REHEAT_BETA"))
-        cfg.REHEAT_BETA = gst["REHEAT_BETA"];
     if (gst.contains("REHEAT_DECAY"))
         cfg.REHEAT_DECAY = gst["REHEAT_DECAY"];
     if (gst.contains("REHEAT_THRESHOLD"))
@@ -3216,6 +3290,10 @@ GMS_SawTooth_FastSA_config load_GMS_SawTooth_FastSA_config_from_json(const json 
         cfg.ewma_alpha = gst["ewma_alpha"];
     if (gst.contains("max_seconds_divisor"))
         cfg.max_seconds_divisor = gst["max_seconds_divisor"];
+    if (gst.contains("t1_amplify"))
+        cfg.t1_amplify = gst["t1_amplify"];
+    if (gst.contains("stagnation_limit"))
+        cfg.stagnation_limit = gst["stagnation_limit"];
     return cfg;
 }
 
@@ -3251,6 +3329,8 @@ GMS_FastSA_config load_GMS_FastSA_config_from_json(const json &j)
         cfg.ewma_alpha = gfsa["ewma_alpha"];
     if (gfsa.contains("max_seconds_divisor"))
         cfg.max_seconds_divisor = gfsa["max_seconds_divisor"];
+    if (gfsa.contains("t1_amplify"))
+        cfg.t1_amplify = gfsa["t1_amplify"];
     return cfg;
 }
 

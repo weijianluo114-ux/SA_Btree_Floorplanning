@@ -1,16 +1,16 @@
 # 指定要调优的算法模式（与 --algo 一致）
-algo: 0   # 0=SA, 1=GMS, ...
+algo: 4   # 0=SA, 1=GMS, ...
 
-# 指定要扫描的参数（使用点号路径，如 SA.r）
-parameter: "k"
+# 指定要扫描的参数（如algo中的r）
+parameter: "stagnation_limit"
 
 # 范围扫描参数
-start: 25
-end: 50
-step: 5
+start: 200
+end: 300
+step: 10
 
 # 每个参数值运行的实验次数
-num_runs_per_value: 6
+num_runs_per_value: 1
 
 # 其他固定参数（可选）
 fixed: {

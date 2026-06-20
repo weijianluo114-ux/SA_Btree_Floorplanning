@@ -12,7 +12,8 @@
     # 单文件模式
     python draw_fixed_outline.py --floorplan ../output/xxx/run1_2026-06-09_12:00:00.floorplan
 """
-
+import numpy as np
+import matplotlib.cm as cm
 import argparse
 import re
 import sys
@@ -66,6 +67,156 @@ def parse_floorplan_file(file_path):
 
     return chip_width, blocks
 
+# ==============================================================
+#  第1.5部分：解析 .pl 和 .nets 文件（新增）
+# ==============================================================
+
+def parse_pl_file(file_path):
+    """
+    解析 .pl 文件，返回引脚坐标字典 {pin_name: (x, y)}。
+    .pl 文件格式：每行 "pin_name x y"
+    """
+    pins = {}
+    with open(file_path, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split()
+            if len(parts) >= 3:
+                name = parts[0]
+                x = int(parts[1])
+                y = int(parts[2])
+                pins[name] = (x, y)
+    return pins
+
+
+def parse_nets_file(file_path):
+    """
+    解析 .nets 文件，返回网表列表。
+    返回: list of list of str，每个子列表是一个网表中的所有元素（引脚/模块名）
+    
+    .nets 文件格式：
+        NumNets : N
+        NumPins : M
+        NetDegree : D
+        elem1
+        elem2
+        ...
+    """
+    nets = []
+    with open(file_path, 'r') as f:
+        lines = [line.strip() for line in f if line.strip()]
+
+    # 跳过文件头 (NumNets / NumPins 行)
+    while lines and (lines[0].startswith('NumNets') or lines[0].startswith('NumPins')):
+        lines = lines[1:]
+
+    i = 0
+    while i < len(lines):
+        if lines[i].startswith('NetDegree'):
+            degree = int(lines[i].split(':')[1].strip())
+            i += 1
+            net = []
+            for _ in range(degree):
+                if i < len(lines):
+                    net.append(lines[i])
+                    i += 1
+            nets.append(net)
+        else:
+            i += 1
+
+    return nets
+
+
+def _build_block_dict(blocks):
+    """
+    从 blocks list 构建 {name: (x, y, w, h)} 字典。
+    """
+    return {b[0]: (b[1], b[2], b[3], b[4]) for b in blocks}
+
+
+def _get_net_positions(net_elements, block_dict, pin_dict):
+    """
+    获取网表中各元素的位置坐标。
+    - 模块 (sb*) 取其中心坐标
+    - 引脚 (p*) 取 .pl 中的坐标
+    返回: list of (x, y)
+    """
+    positions = []
+    for elem in net_elements:
+        if elem in block_dict:
+            bx, by, bw, bh = block_dict[elem]
+            positions.append((bx + bw / 2, by + bh / 2))
+        elif elem in pin_dict:
+            positions.append(pin_dict[elem])
+    return positions
+
+
+def draw_nets_on_floorplan(ax, nets, block_dict, pin_dict, max_nets=None):
+    """
+    在已存在的 matplotlib Axes 上叠加绘制网表连线。
+    每个网表使用不同的颜色（循环使用 tab20 色表）。
+    
+    参数:
+        ax: matplotlib Axes 对象
+        nets: list of list of str，网表列表
+        block_dict: {name: (x, y, w, h)} 模块位置字典
+        pin_dict: {name: (x, y)} 引脚坐标字典
+        max_nets: 最多绘制的网表数（None 表示全部）
+    """
+    num_nets = len(nets)
+    if num_nets == 0:
+        return
+
+    # 使用 tab20 色表循环（20 种不同颜色）
+    colors = cm.tab20(np.linspace(0, 1, 20))
+    drawn = 0
+
+    for idx, net in enumerate(nets):
+        if max_nets is not None and drawn >= max_nets:
+            break
+
+        positions = _get_net_positions(net, block_dict, pin_dict)
+        if len(positions) < 2:
+            continue
+
+        color = colors[drawn % len(colors)]
+        xs = [p[0] for p in positions]
+        ys = [p[1] for p in positions]
+
+        # 小度数网表 (2~4) 使用完全连接（两两连接）
+        # 大度数网表使用链式连接避免过于杂乱
+        if len(positions) <= 4:
+            for i in range(len(positions)):
+                for j in range(i + 1, len(positions)):
+                    ax.plot([positions[i][0], positions[j][0]],
+                            [positions[i][1], positions[j][1]],
+                            color=color, linewidth=0.6, alpha=0.6)
+        else:
+            # 链式连接（按列表顺序串联所有点）
+            ax.plot(xs, ys, '-', color=color, linewidth=0.6, alpha=0.6)
+
+        # 在每个元素位置画小圆点
+        ax.scatter(xs, ys, color=color, s=8, alpha=0.8, zorder=5)
+
+        drawn += 1
+
+    # 添加图例（只显示前 20 种颜色中的一部分，避免图例过长）
+    legend_elements = []
+    for i in range(min(20, drawn)):
+        legend_elements.append(
+            Line2D([0], [0], color=colors[i % len(colors)],
+                   linewidth=1.5, label=f'Net {i + 1}')
+        )
+    if drawn > 20:
+        legend_elements.append(
+            Line2D([0], [0], color='gray', linewidth=1.5,
+                   label=f'... (共 {drawn} 个网表)')
+        )
+    if legend_elements:
+        ax.legend(handles=legend_elements, loc='upper right',
+                  fontsize=6, framealpha=0.7)
 
 # ==============================================================
 #  第二部分：解析 .Btree 文件
@@ -204,8 +355,18 @@ def draw_btree(root_id, children, block_names, output_image=None, dpi=300):
 # ==============================================================
 
 def draw_floorplan(blocks, chip_width=None, output_image=None,
-                   show_labels=True, dpi=300, algo=0):
-    """绘制矩形布局图。"""
+                   show_labels=True, dpi=300, algo=0,
+                   nets=None, block_dict=None, pin_dict=None,
+                   max_nets_draw=None):
+    """
+    绘制矩形布局图，并可选择叠加网表连线。
+    
+    新增参数:
+        nets: list of list of str，网表数据（来自 parse_nets_file）
+        block_dict: {name: (x, y, w, h)} 模块位置字典
+        pin_dict: {name: (x, y)} 引脚坐标字典
+        max_nets_draw: 最多绘制的网表数
+    """
     if not blocks:
         print("  没有可绘制的块")
         return
@@ -245,14 +406,24 @@ def draw_floorplan(blocks, chip_width=None, output_image=None,
             ax.text(x + w / 2, y + h / 2, name,
                     ha='center', va='center', fontsize=8, fontweight='bold')
 
+    # ---- 新增：叠加网表连线 ----
+    has_nets = (nets is not None and block_dict is not None
+                and pin_dict is not None and len(nets) > 0)
+    if has_nets:
+        draw_nets_on_floorplan(ax, nets, block_dict, pin_dict, max_nets_draw)
+    # ---------------------------
+
     ax.set_aspect('equal')
     ax.set_xlabel('X')
     ax.set_ylabel('Y')
     title = f'Floorplan (algo{algo}, {len(blocks)} blocks)'
     if chip_width is not None:
         title += f' - Target W={chip_width} ({status})'
-    ax.set_title(title)
-    ax.grid(True, linestyle='--', alpha=0.5)
+    if has_nets:
+        n_shown = min(max_nets_draw, len(nets)) if max_nets_draw else len(nets)
+        title += f' - Nets: {n_shown}'
+    # ax.set_title(title)
+    # ax.grid(True, linestyle='--', alpha=0.5)
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
 
@@ -324,6 +495,23 @@ def run_batch(args):
     fig_dir = script_dir / "../results/floor_plan_figures" / dir_name
     fig_dir.mkdir(parents=True, exist_ok=True)
 
+    # ---- 新增：如果启用了网表绘制，提前加载 .pl 和 .nets 文件 ----
+    nets_data = None   # (nets, pin_dict)
+    if args.draw_nets:
+        testcase_dir = (script_dir / "../testcase").resolve()
+        pl_path = testcase_dir / f"n{args.blocks}.pl"
+        nets_path = testcase_dir / f"n{args.blocks}.nets"
+        if pl_path.exists() and nets_path.exists():
+            pin_dict = parse_pl_file(str(pl_path))
+            nets = parse_nets_file(str(nets_path))
+            nets_data = (nets, pin_dict)
+            print(f"已加载网表数据: {len(nets)} 个网表, "
+                  f"{len(pin_dict)} 个引脚 (来自 {pl_path.name}, {nets_path.name})")
+        else:
+            print(f"警告: 未找到测试用例文件 ({pl_path.name}, {nets_path.name})，"
+                  f"跳过网表绘制")
+    # ----------------------------------------------------------------
+
     # 预生成块名称列表（用于 B-tree 绘图）
     block_names = [f"sb{i}" for i in range(args.blocks)]
 
@@ -334,6 +522,21 @@ def run_batch(args):
         # --- 绘制 Floorplan ---
         chip_width, blocks = parse_floorplan_file(str(fp_path))
         if blocks:
+            # ---- 修改：构建 block_dict 并传递 nets_data ----
+            block_dict = _build_block_dict(blocks) if nets_data else None
+            extra_kwargs = {}
+            if nets_data:
+                extra_kwargs['nets'] = nets_data[0]
+                extra_kwargs['block_dict'] = block_dict
+                extra_kwargs['pin_dict'] = nets_data[1]
+                extra_kwargs['max_nets_draw'] = args.max_nets_draw
+            # 生成带网表的图片（以 _with_nets 后缀区分）
+            if nets_data:
+                fp_img_nets = fig_dir / f"{stem}_floorplan_with_nets.png"
+                draw_floorplan(blocks, chip_width, output_image=str(fp_img_nets),
+                               show_labels=True, dpi=args.dpi, algo=args.algo,
+                               **extra_kwargs)
+            # 同时输出原始的 floorplan（不带网表）
             fp_img = fig_dir / f"{stem}_floorplan.png"
             draw_floorplan(blocks, chip_width, output_image=str(fp_img),
                            show_labels=True, dpi=args.dpi, algo=args.algo)
@@ -380,20 +583,18 @@ def main():
                         help="单文件模式: .Btree 文件路径（可选，不提供则不画树）")
 
     # --- 通用参数 ---
+    parser.add_argument("-o", "--output", type=str, default=None,
+                        help="单文件模式输出目录（默认与 .floorplan 同目录）")
     parser.add_argument("--dpi", type=int, default=300,
                         help="输出图片分辨率（默认300）")
     parser.add_argument("--no_labels", action="store_true",
                         help="不显示块名称标签")
-
+    # --- 新增：网表绘制参数 ---
+    parser.add_argument("--draw_nets", action="store_true",
+                        help="启用网表连线绘制（从 testcase/ 读取 .pl 和 .nets）")
+    parser.add_argument("--max_nets_draw", type=int, default=None,
+                        help="最多绘制的网表数量（默认全部），数值越大图越密集")
     args = parser.parse_args()
-
-    # ===== 批量模式（同时提供了 --blocks 和 --ratio）=====
-    if args.blocks is not None and args.ratio is not None:
-        # num_runs 默认 1
-        if args.num_runs is None:
-            args.num_runs = 1
-        run_batch(args)
-        return
 
     # ===== 单文件模式 =====
     if args.floorplan is not None:
@@ -411,9 +612,42 @@ def main():
         num_blocks = len(blocks)
         block_names = [f"sb{i}" for i in range(num_blocks)]
 
+        # ---- 新增：单文件模式的网表加载 ----
+        nets_data = None
+        if args.draw_nets:
+            testcase_dir = (fp_path.parent.parent / "testcase").resolve()
+            if not testcase_dir.exists():
+                # 尝试从脚本相对路径查找
+                testcase_dir = (Path(__file__).resolve().parent / "../testcase").resolve()
+            # 根据 blocks 数量推断 n 值
+            n_val = num_blocks  # 用实际块数匹配
+            # 尝试常见值
+            for candidate in [100, 200, 300]:
+                if abs(num_blocks - candidate) <= 10:  # 允许小误差
+                    n_val = candidate
+                    break
+            pl_path = testcase_dir / f"n{n_val}.pl"
+            nets_path = testcase_dir / f"n{n_val}.nets"
+            if pl_path.exists() and nets_path.exists():
+                pin_dict = parse_pl_file(str(pl_path))
+                nets = parse_nets_file(str(nets_path))
+                nets_data = (nets, pin_dict)
+                print(f"已加载网表数据: {len(nets)} 个网表, {len(pin_dict)} 个引脚")
+            else:
+                print(f"警告: 未找到测试用例文件，跳过网表绘制")
+        # -----------------------------------
+
         # 绘制 Floorplan
-        fp_img = None  # 不保存，直接显示
-        draw_floorplan(blocks, chip_width, output_image=None,
+                # 确定输出目录
+        if args.output:
+            out_dir = Path(args.output)
+        else:
+            out_dir = fp_path.parent
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        # 绘制 Floorplan
+        fp_img = out_dir / f"{fp_path.stem}_floorplan.png"
+        draw_floorplan(blocks, chip_width, output_image=str(fp_img),
                        show_labels=not args.no_labels, dpi=args.dpi)
 
         # 绘制 B-tree（如果有对应的 .Btree 文件）
@@ -425,12 +659,23 @@ def main():
         if bt_path.exists():
             root_id, children = parse_btree_file(str(bt_path), num_blocks)
             if root_id >= 0:
+                bt_img = out_dir / f"{fp_path.stem}_btree.png"
                 draw_btree(root_id, children, block_names,
-                           output_image=None, dpi=args.dpi)
+                           output_image=str(bt_img), dpi=args.dpi)
         else:
             print("未找到对应的 .Btree 文件，跳过树图绘制")
 
         return
+
+    # ===== 批量模式（同时提供了 --blocks 和 --ratio）=====
+    if args.blocks is not None and args.ratio is not None:
+        # num_runs 默认 1
+        if args.num_runs is None:
+            args.num_runs = 1
+        run_batch(args)
+        return
+
+    
 
     # ===== 参数不足 =====
     print("错误: 请提供 --blocks 和 --ratio（批量模式），或 --floorplan（单文件模式）",
