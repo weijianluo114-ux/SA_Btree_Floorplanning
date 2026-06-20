@@ -20,7 +20,9 @@
 ### ③目标
 
 1. 总线长WL和总运行时间RT最小
-2. 1）固定轮廓约束：$\forall b_i \in B,0\le x_i \le w_{fl}-w_i\; $and $ 0 \le y_i \le h_{fl}-h_i$
+2. 1)固定轮廓约束：
+   $ \forall b_i \in B,0\le x_i \le w_{fl}-w_i\; \ and\  0 \le y_i \le h_{fl}-h_i $
+
    2)任意2个模块不能重叠
 
 ### ④输入文件
@@ -150,9 +152,11 @@ e.g.
 
 ## 参考论文
 
-#### （1）Modern Floorplanning Based on Fast Simulated Annealing
+#### （1）Modern Floorplanning Based on B∗-Tree and Fast Simulated Annealing
 
 #### （2）B*-Trees: A New Representation for Non-Slicing Floorplans
+
+#### （3）A Hybrid Simulated Annealing Algorithm for Nonslicing VLSI Floorplanning
 
 ## 常用命令
 
@@ -165,8 +169,6 @@ git switch main		#切换到目标分支（你想把代码合并到哪里，就�
 git pull origin main	#拉取最新的远程代码（避免冲突，如果是协作项目）
 git merge test		#合并源分支
 ```
-
-不过，同步文件的话，vscode巨简单，直接在左边按同步更改的按钮即可
 
 ## 参考链接
 

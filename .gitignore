@@ -7,8 +7,15 @@ log/
 log_bak/
 results/
 test_experiments/seeds/
+*.json
+tmp/
+
+#docs
 AI_experiments.md
 Arguments.md
 experiment.md
-*.json
-tmp/
+Experiments_Design.md
+FastSAconfig.csv
+GMSconfig.csv
+ORIGINALconfig.csv
+Problem.md
