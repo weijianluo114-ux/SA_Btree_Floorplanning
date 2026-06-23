@@ -32,16 +32,19 @@ using namespace std;
 //  ========== SA 算法配置 ==========
 struct SA_config
 {
-    double P = 0.95;              // 初始接受概率，用于计算 T0
-    double r = 0.85;              // 温度衰减系数
-    double epsilon = 0.0001;      // 最低温度阈值
-    double reject_rate = 0.99;    // 最大拒绝率
-    int k = 40;                   // 每块试探次数系数 (N = k * num_hardblocks)
+    double P = 0.95; // 初始接受概率，用于计算 T0
+    double r = 0.9;  // 原始(b100)的：算法衰减系数
+    // double r = 0.85;           // 温度衰减系数
+    double epsilon = 0.0001;   // 最低温度阈值
+    double reject_rate = 0.99; // 最大拒绝率
+    int k = 20;                // 原始(b100)的：每块试探次数系数 (N = k * num_hardblocks)
+    // int k = 40;                   // 每块试探次数系数 (N = k * num_hardblocks)
     int max_seconds_divisor = 10; // 阶段超时: max_seconds = (n / divisor)^2
     int time_limit = 1195;        // 总运行时间上限 (秒)
     // 操作概率 (当前为均匀 rand()%3，可扩展)
     double op_prob[3] = {1.0 / 3, 1.0 / 3, 1.0 / 3};
-    double t0_block_divisor = 100.0; // T0 = -cost * (n / divisor) / log(P)
+    double t0_block_divisor = 1.0; // 原始(b100)的：T0 = -cost * (n / divisor) / log(P)
+    // double t0_block_divisor = 100.0; // T0 = -cost * (n / divisor) / log(P)
 };
 
 // ========== GMS 算法配置 ==========
@@ -564,8 +567,8 @@ Cost CalculateCost()
     // area of current floorplan
     double floorplan_area = width * height; // 计算当前 floorplan 的面积。这里用的是外包矩形面积，不是所有块真实面积之和。
     // aspect ratio of current floorplan
-    // double R = (double)height / width; // 计算当前版图的长宽比，这里会导致不对称输出，故要更正
-    double R = (double)min(height, width) / max(height, width); // 更新后的R计算方式
+    double R = (double)height / width; // 原始的：计算当前版图的长宽比，这里会导致不对称输出，故要更正
+    // double R = (double)min(height, width) / max(height, width); // 更新后的R计算方式
 
     // half perimeter wire length   半周长线长
     double wirelength = 0;              // 初始化半周长线长的累加值。后面会遍历每一条 net，把每条 net 的 HPWL 加到这里。
