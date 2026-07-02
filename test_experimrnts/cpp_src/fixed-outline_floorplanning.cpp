@@ -487,6 +487,351 @@ void InitBtree() // 更有约束，试图让初始树对应的 floorplan 更容�
     }
 }
 
+void AreaBasedInitBtree()
+{
+#ifdef DEBUG
+    ScopedTimer t("AreaBasedInitBtree");
+#endif
+    btree = vector<Node>(num_hardblocks);
+    vector<int> inserted(num_hardblocks, 0);
+
+    vector<HardBlock> hardblocks_temp(hardblocks);
+
+    sort(hardblocks_temp.begin(), hardblocks_temp.end(), [&](HardBlock a, HardBlock b) {
+        return a.width * a.height > b.width * b.height;
+    });
+
+    root_block = hardblocks_temp[0].id;
+    btree[root_block].parent = -1;
+    inserted[root_block] = 1;
+
+    int row_node = root_block;
+    int col_node = root_block;
+    int width = hardblocks[root_block].width;
+    int inserted_cnt = 1;
+
+    for (int i = 1; i < num_hardblocks; i++)
+    {
+        int node = hardblocks_temp[i].id;
+        //printf("insert id: %2d, area: %4d\n", node, hardblocks[i].width * hardblocks[i].height);
+        btree[node].left_child = -1;
+        btree[node].right_child = -1;
+        if (width > W)
+        {
+            btree[node].parent = row_node;
+            btree[row_node].right_child = node;
+            row_node = node;
+            col_node = node;
+            width = hardblocks[node].width;
+        }
+        else
+        {
+            btree[node].parent = col_node;
+            btree[col_node].left_child = node;
+            col_node = node;    
+            width += hardblocks[node].width;
+        }
+
+        inserted[node] = 1;
+        inserted_cnt++;
+    }
+}
+
+void DegreeBasedInitBtree()
+{
+
+#ifdef DEBUG
+    ScopedTimer t("DegreeBasedInitBtree");
+#endif
+    btree = vector<Node>(num_hardblocks);
+
+    //----------------------------------
+    // calculate degree
+    //----------------------------------
+ 
+    vector<int> degree(num_hardblocks,0);
+
+    for(const auto& net:nets)
+    {
+        int k=0;
+
+        for(int pin:net)
+        {
+            if(pin<num_hardblocks)
+                k++;
+        }
+
+        for(int pin:net)
+        {
+            if(pin<num_hardblocks)
+                degree[pin]+=k-1;
+        }
+    }
+    //----------------------------------
+    // sort by degree
+    //----------------------------------
+
+    vector<int> order(num_hardblocks);
+
+    for (int i = 0; i < num_hardblocks; i++)
+        order[i] = i;
+
+    sort(order.begin(), order.end(),
+        [&](int a, int b)
+        {
+            return degree[a] > degree[b];
+        });
+
+    //----------------------------------
+    // build B*-tree
+    //----------------------------------
+
+    root_block = order[0];
+
+    btree[root_block].parent = -1;
+    btree[root_block].left_child = -1;
+    btree[root_block].right_child = -1;
+
+    int row_node = root_block;
+    int col_node = root_block;
+
+    int width = hardblocks[root_block].width;
+
+    for (int idx = 1; idx < num_hardblocks; idx++)
+    {
+        int node = order[idx];
+
+        btree[node].left_child = -1;
+        btree[node].right_child = -1;
+
+        if (width > W)
+        {
+            //----------------------------------
+            // start a new row
+            //----------------------------------
+
+            btree[node].parent = row_node;
+            btree[row_node].right_child = node;
+
+            row_node = node;
+            col_node = node;
+
+            width = hardblocks[node].width;
+        }
+        else
+        {
+            //----------------------------------
+            // continue current row
+            //----------------------------------
+
+            btree[node].parent = col_node;
+            btree[col_node].left_child = node;
+
+            col_node = node;
+
+            width += hardblocks[node].width;
+        }
+    }
+}
+
+void AreaDegreeInitBtree()
+{
+#ifdef DEBUG
+    ScopedTimer t("AreaDegreeInitBtree");
+#endif
+
+    //----------------------------------
+    // initialize
+    //----------------------------------
+
+    btree = vector<Node>(num_hardblocks);
+
+    for(int i=0;i<num_hardblocks;i++)
+    {
+        btree[i].parent = -1;
+        btree[i].left_child = -1;
+        btree[i].right_child = -1;
+    }
+
+    //----------------------------------
+    // calculate degree
+    //----------------------------------
+
+    vector<int> degree(num_hardblocks, 0);
+
+    for(const auto& net : nets)
+    {
+        int k = 0;
+
+        for(int pin : net)
+        {
+            if(pin < num_hardblocks)
+                k++;
+        }
+
+        for(int pin : net)
+        {
+            if(pin < num_hardblocks)
+                degree[pin] += (k - 1);
+        }
+    }
+
+    //----------------------------------
+    // calculate score
+    //----------------------------------
+
+    vector<long long> score(num_hardblocks);
+
+    for(int i=0;i<num_hardblocks;i++)
+    {
+        long long area =
+            (long long)hardblocks[i].width *
+            hardblocks[i].height;
+
+        score[i] =
+            area *
+            degree[i];
+    }
+
+    //----------------------------------
+    // sort by score
+    //----------------------------------
+
+    vector<int> order(num_hardblocks);
+
+    for(int i=0;i<num_hardblocks;i++)
+        order[i] = i;
+
+    sort(order.begin(),
+         order.end(),
+         [&](int a,int b)
+         {
+             return score[a] > score[b];
+         });
+
+    //----------------------------------
+    // build B*-tree
+    //----------------------------------
+
+    root_block = order[0];
+
+    btree[root_block].parent = -1;
+
+    int row_node = root_block;
+    int col_node = root_block;
+
+    int width =
+        hardblocks[root_block].width;
+
+    for(int idx=1;
+        idx<num_hardblocks;
+        idx++)
+    {
+        int node = order[idx];
+
+        if(width +
+           hardblocks[node].width > W)
+        {
+            //----------------------------------
+            // new row
+            //----------------------------------
+
+            btree[node].parent =
+                row_node;
+
+            btree[row_node].right_child =
+                node;
+
+            row_node = node;
+            col_node = node;
+
+            width =
+                hardblocks[node].width;
+        }
+        else
+        {
+            //----------------------------------
+            // same row
+            //----------------------------------
+
+            btree[node].parent =
+                col_node;
+
+            btree[col_node].left_child =
+                node;
+
+            col_node = node;
+
+            width +=
+                hardblocks[node].width;
+        }
+    }
+}
+
+void AreaBFSInit() // 更随机，更像纯拓扑初始化。
+{
+#ifdef DEBUG
+    ScopedTimer t("BuildInitBtree");
+#endif
+    btree = vector<Node>(num_hardblocks); // 先开一个大小等于硬块数的节点数组，每个硬块先对应一个 Node 位置，后面会往里面填父子关系
+
+    vector<HardBlock> hardblocks_temp(hardblocks);
+
+    sort(hardblocks_temp.begin(), hardblocks_temp.end(), [&](HardBlock a, HardBlock b) {
+        return a.width * a.height > b.width * b.height;
+    });
+
+    // for (int i = 0; i < hardblocks_temp.size(); i++) {
+        
+    // }
+
+    queue<int> bfs;                          // 定义一个队列，用来按层遍历树。这里的思路是后面从根开始，一层一层往下随机挂孩子
+    vector<int> inserted(num_hardblocks, 0); // 定义一个标记数组，记录每个硬块有没有已经放进树里。0 表示没放，1 表示已经放过
+
+    int i = 0;
+
+    root_block = hardblocks_temp[i].id;   // 随机选一个硬块作为根节点。rand() % num_hardblocks 的结果范围是 0 到 num_hardblocks - 1
+    btree[root_block].parent = -1;        // 根节点没有父亲，所以父节点设为 -1，这是个常见的“无效下标”标记
+    bfs.push(root_block);                 // 把根节点放进队列，准备后面从它开始向下扩展
+    inserted[root_block] = 1;             // 标记这个根节点已经被使用，避免后面又被随机选中重复插入
+
+    int left = num_hardblocks - 1; // 除了根节点之外，还剩下多少个硬块没有放进树里。因为根已经用了一个，所以初值是总数减 1
+    while (!bfs.empty())           // 只要队列里还有节点，就继续处理。队列里的节点就是当前已经放入树中的父节点，后面要给它们分配孩子。
+    {
+        int parent = bfs.front(); // 返回队首的引用     取出队首节点作为当前父节点，但还没有从队列删除它
+        bfs.pop();                // 把刚才取出的父节点从队列中移除，表示它已经开始处理了
+
+        int left_child = -1, right_child = -1; // 先把左右孩子都初始化成无效值，表示这个父节点一开始还没有孩子
+        if (left > 0)                          // 如果还有没放进树里的硬块，就给当前父节点分配孩子
+        {
+            left_child = hardblocks_temp[++i].id;
+
+            btree[parent].left_child = left_child; // 把刚找到的节点挂到当前父节点的左边。
+            bfs.push(left_child);                  // 把这个左孩子也放进队列，方便后面继续给它分配孩子
+            inserted[left_child] = 1;              // 标记这个节点已经用过，防止后面再次随机选到它
+            left--;                                // 剩余未插入的节点数减 1
+            // 这一段是在判断是否还能再分配一个右孩子。如果还有剩余节点，就同样随机找一个没用过的节点作为右孩子，并挂到当前父节点右边
+            if (left > 0)
+            {
+                right_child = hardblocks_temp[++i].id;
+
+                btree[parent].right_child = right_child; // 把随机得到的节点挂到右边
+                bfs.push(right_child);                   // 把右孩子也放入队列，等待后续扩展
+                inserted[right_child] = 1;
+                left--;
+            }
+        }
+
+        // 其实前面已经赋值过一次了，所以这里是重复赋值，功能上没有新增作用。
+        btree[parent].left_child = left_child;
+        btree[parent].right_child = right_child;
+        if (left_child != -1)
+            btree[left_child].parent = parent; // 如果左孩子确实存在，就设置它的父节点
+        if (right_child != -1)
+            btree[right_child].parent = parent; // 把左孩子的父指针指回当前父节点
+    }
+}
+
 // 这个函数是在“递归给树上的每个块算坐标”。它的核心是：知道父块的位置后，按照 B*-tree 的规则，把当前块放到父块右边或上方，并更新轮廓线
 void BtreePreorderTraverse(int cur_node, bool left)
 {
@@ -3421,6 +3766,11 @@ int main(int argc, char **argv)
 
     BuildInitBtree(); // 随机化建立树
     // InitBtree();
+    // AreaBFSInit();
+    // AreaBasedInitBtree();
+    // AreaDegreeInitBtree();
+    // DegreeBasedInitBtree();
+
 
     // 6. 根据模式调用不同算法
     // 注意：读取文件、构建初始解等公共部分应该提前完成，这里只调用求解函数
