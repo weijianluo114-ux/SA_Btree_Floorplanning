@@ -44,21 +44,22 @@ python test_scripts.py --num_runs 2 --white_space_ratio 0.15
 
 ## 命令行参数一览
 
-| 参数                    | 类型  | 默认值                         | 说明                                             |
-| ----------------------- | ----- | ------------------------------ | ------------------------------------------------ |
-| `--executable`          | str   | `./bin/hw3_dbg`                | 可执行文件路径（相对于脚本目录）                 |
-| `--hardblocks`          | str   | `./testcase/n100.hardblocks`   | hardblocks 文件路径                              |
-| `--nets`                | str   | `./testcase/n100.nets`         | nets 文件路径                                    |
-| `--terminals`           | str   | `./testcase/n100.pl`           | terminals 文件路径                               |
-| `--white_space_ratio`   | float | `0.1`                          | 空白比例                                         |
-| `--num_runs`            | int   | `20`                           | 运行次数                                         |
-| `--output_dir`          | str   | `None`                         | floorplan 输出目录（自动生成）                   |
-| `--log_file`            | str   | `None`                         | 完整日志文件路径（自动生成）                     |
-| `--seed_file`           | str   | `None`                         | 种子文件路径（指定后可复现实验）                 |
-| `--skip_make`           | flag  | `False`                        | 跳过 make 编译步骤                               |
-| `--record_curve`        | flag  | `False`                        | 记录模拟退火过程中的详细参数曲线                 |
-| `-a` / `--algo`         | int   | `0`                            | 算法模式（见下表）                               |
-| `--tune`                | str   | `None`                         | 调优配置文件（YAML），触发参数调优模式           |
+
+| 参数                  | 类型  | 默认值                       | 说明                                   |
+| ----------------------- | ------- | ------------------------------ | ---------------------------------------- |
+| `--executable`        | str   | `./bin/hw3_dbg`              | 可执行文件路径（相对于脚本目录）       |
+| `--hardblocks`        | str   | `./testcase/n100.hardblocks` | hardblocks 文件路径                    |
+| `--nets`              | str   | `./testcase/n100.nets`       | nets 文件路径                          |
+| `--terminals`         | str   | `./testcase/n100.pl`         | terminals 文件路径                     |
+| `--white_space_ratio` | float | `0.1`                        | 空白比例                               |
+| `--num_runs`          | int   | `20`                         | 运行次数                               |
+| `--output_dir`        | str   | `None`                       | floorplan 输出目录（自动生成）         |
+| `--log_file`          | str   | `None`                       | 完整日志文件路径（自动生成）           |
+| `--seed_file`         | str   | `None`                       | 种子文件路径（指定后可复现实验）       |
+| `--skip_make`         | flag  | `False`                      | 跳过 make 编译步骤                     |
+| `--record_curve`      | flag  | `False`                      | 记录模拟退火过程中的详细参数曲线       |
+| `-a` / `--algo`       | int   | `0`                          | 算法模式（见下表）                     |
+| `--tune`              | str   | `None`                       | 调优配置文件（YAML），触发参数调优模式 |
 
 > **注意**：`--results_csv` 参数虽保留在 argparse 中，但对应的 CSV 写入代码已注释，当前版本不生成结果 CSV 文件。所有数据均在日志（`.txt`）中记录。
 
@@ -66,15 +67,16 @@ python test_scripts.py --num_runs 2 --white_space_ratio 0.15
 
 ## 算法模式对照表
 
-| `-a` 值 | 算法名称                   | JSON 配置块名              | 说明                                   |
-| -------- | -------------------------- | -------------------------- | -------------------------------------- |
-| `0`      | **SA**                     | `"SA"`                     | 原始模拟退火算法                       |
-| `1`      | **GMS**                    | `"GMS"`                    | Guided Move Selection + SA             |
-| `2`      | **FastSA**                 | `"FastSA"`                 | 快速模拟退火（动态温度调度）           |
-| `3`      | **GMS_FastSA**             | `"GMS_FastSA"`             | GMS 偏置选择 + FastSA 温度调度         |
-| `4`      | **SawTooth_FastSA**        | `"SawTooth_FastSA"`        | 锯齿形回火 FastSA（停滞检测回火）      |
-| `5`      | **GMS_DoubleMatrix**       | `"GMS_DoubleMatrix"`       | 双矩阵 GMS（Swap/Move 分离独立矩阵）   |
-| `6`      | **GMS_SawTooth_FastSA**    | `"GMS_SawTooth_FastSA"`    | GMS 偏置选择 + SawTooth 回火 FastSA    |
+
+| `-a` 值 | 算法名称                | JSON 配置块名           | 说明                                 |
+| --------- | ------------------------- | ------------------------- | -------------------------------------- |
+| `0`     | **SA**                  | `"SA"`                  | 原始模拟退火算法                     |
+| `1`     | **GMS**                 | `"GMS"`                 | Guided Move Selection + SA           |
+| `2`     | **FastSA**              | `"FastSA"`              | 快速模拟退火（动态温度调度）         |
+| `3`     | **GMS_FastSA**          | `"GMS_FastSA"`          | GMS 偏置选择 + FastSA 温度调度       |
+| `4`     | **SawTooth_FastSA**     | `"SawTooth_FastSA"`     | 锯齿形回火 FastSA（停滞检测回火）    |
+| `5`     | **GMS_DoubleMatrix**    | `"GMS_DoubleMatrix"`    | 双矩阵 GMS（Swap/Move 分离独立矩阵） |
+| `6`     | **GMS_SawTooth_FastSA** | `"GMS_SawTooth_FastSA"` | GMS 偏置选择 + SawTooth 回火 FastSA  |
 
 ---
 
@@ -84,42 +86,45 @@ python test_scripts.py --num_runs 2 --white_space_ratio 0.15
 
 ### SA（algo 0）— 配置块名 `"SA"`
 
-| 参数               | 类型   | 默认值   | 说明                                         |
-| ------------------ | ------ | -------- | -------------------------------------------- |
-| `P`                | double | 0.95     | 初始接受概率，用于计算 T0                    |
-| `r`                | double | 0.85     | 温度衰减系数（T *= r）                      |
-| `epsilon`          | double | 0.0001   | 最低温度阈值                                 |
-| `reject_rate`      | double | 0.99     | 最大拒绝率（超过则停止退火）                 |
-| `k`                | int    | 40       | 每块试探次数系数（N = k × num_hardblocks）  |
-| `max_seconds_divisor` | int | 10     | 阶段超时: max_seconds = (n / divisor)²       |
-| `time_limit`       | int    | 1195     | 总运行时间上限（秒）                         |
-| `t0_block_divisor` | double | 100.0    | T0 = -cost × (n / divisor) / log(P) 的分母   |
-| `op_prob`          | array  | [1/3, 1/3, 1/3] | 操作概率 [旋转, 交换, 移动]         |
+
+| 参数                  | 类型   | 默认值          | 说明                                        |
+| ----------------------- | -------- | ----------------- | --------------------------------------------- |
+| `P`                   | double | 0.95            | 初始接受概率，用于计算 T0                   |
+| `r`                   | double | 0.85            | 温度衰减系数（T *= r）                      |
+| `epsilon`             | double | 0.0001          | 最低温度阈值                                |
+| `reject_rate`         | double | 0.99            | 最大拒绝率（超过则停止退火）                |
+| `k`                   | int    | 40              | 每块试探次数系数（N = k × num_hardblocks） |
+| `max_seconds_divisor` | int    | 10              | 阶段超时: max_seconds = (n / divisor)²     |
+| `time_limit`          | int    | 1195            | 总运行时间上限（秒）                        |
+| `t0_block_divisor`    | double | 100.0           | T0 = -cost × (n / divisor) / log(P) 的分母 |
+| `op_prob`             | array  | [1/3, 1/3, 1/3] | 操作概率 [旋转, 交换, 移动]                 |
 
 ### GMS（algo 1）— 配置块名 `"GMS"`
 
-| 参数                  | 类型   | 默认值 | 说明                       |
-| --------------------- | ------ | ------ | -------------------------- |
-| `prob_rotate`         | double | 0.1    | 旋转操作概率               |
-| `prob_swap`           | double | 0.8    | 交换操作概率               |
-| `prob_move`           | double | 0.1    | 移动操作概率               |
-| `bias_explore_ratio`  | double | 0.1    | 纯随机探索概率（1−此为偏置概率） |
-| `P` / `r` / `epsilon` / `reject_rate` / `k` / `max_seconds_divisor` / `time_limit` / `t0_block_divisor` | — | 同 SA 默认值 |
+
+| 参数                                                                                                    | 类型   | 默认值       | 说明                              |
+| --------------------------------------------------------------------------------------------------------- | -------- | -------------- | ----------------------------------- |
+| `prob_rotate`                                                                                           | double | 0.1          | 旋转操作概率                      |
+| `prob_swap`                                                                                             | double | 0.8          | 交换操作概率                      |
+| `prob_move`                                                                                             | double | 0.1          | 移动操作概率                      |
+| `bias_explore_ratio`                                                                                    | double | 0.1          | 纯随机探索概率（1−此为偏置概率） |
+| `P` / `r` / `epsilon` / `reject_rate` / `k` / `max_seconds_divisor` / `time_limit` / `t0_block_divisor` | —     | 同 SA 默认值 |                                   |
 
 ### FastSA（algo 2）— 配置块名 `"FastSA"`
 
-| 参数                     | 类型   | 默认值    | 说明                                        |
-| ------------------------ | ------ | --------- | ------------------------------------------- |
-| `t1_amplify`             | double | 100.0     | T1 放大系数: T1 = t1_amplify × \|Δavg / ln(P)\| |
-| `P`                      | double | 0.95      | 初始接受概率，用于计算 T1                   |
-| `c`                      | double | 100.0     | 论文推荐 c=100                              |
-| `k`                      | int    | 7         | 论文推荐 k=7                                |
-| `max_iter`               | int    | 200000    | 最大迭代次数（安全上限）                    |
-| `max_consecutive_reject` | int    | 5000      | 连续拒绝阈值                                |
-| `min_temp`               | double | 1e-9      | 最低温度阈值                                |
-| `sample_size`            | int    | 1000      | 预采样大小                                  |
-| `ewma_alpha`             | double | 0.4       | EWMA 平滑系数                               |
-| `max_seconds_divisor`    | int    | 10        | 阶段超时: max_seconds = (n / divisor)²      |
+
+| 参数                     | 类型   | 默认值 | 说明                                             |
+| -------------------------- | -------- | -------- | -------------------------------------------------- |
+| `t1_amplify`             | double | 100.0  | T1 放大系数: T1 = t1_amplify ×\|Δavg / ln(P)\| |
+| `P`                      | double | 0.95   | 初始接受概率，用于计算 T1                        |
+| `c`                      | double | 100.0  | 论文推荐 c=100                                   |
+| `k`                      | int    | 7      | 论文推荐 k=7                                     |
+| `max_iter`               | int    | 200000 | 最大迭代次数（安全上限）                         |
+| `max_consecutive_reject` | int    | 5000   | 连续拒绝阈值                                     |
+| `min_temp`               | double | 1e-9   | 最低温度阈值                                     |
+| `sample_size`            | int    | 1000   | 预采样大小                                       |
+| `ewma_alpha`             | double | 0.4    | EWMA 平滑系数                                    |
+| `max_seconds_divisor`    | int    | 10     | 阶段超时: max_seconds = (n / divisor)²          |
 
 ### GMS_FastSA（algo 3）— 配置块名 `"GMS_FastSA"`
 
@@ -127,23 +132,25 @@ python test_scripts.py --num_runs 2 --white_space_ratio 0.15
 
 ### SawTooth_FastSA（algo 4）— 配置块名 `"SawTooth_FastSA"`
 
-| 参数                     | 类型   | 默认值 | 说明                                    |
-| ------------------------ | ------ | ------ | --------------------------------------- |
-| `stagnation_limit`       | int    | 250    | 连续无改进的迭代次数阈值，触发回火      |
-| `REHEAT_DECAY`           | double | 0.9    | 回火幅度衰减系数                        |
-| `REHEAT_THRESHOLD`       | int    | 100    | 连续拒绝阈值（旧版回火触发条件）        |
-| `REHEAT_ROLLBACK_RATIO`  | double | 0.6    | 回火时 temp_n 回退比例                  |
-| 其余同 FastSA           | —      | —      | 同上                                    |
+
+| 参数                    | 类型   | 默认值 | 说明                               |
+| ------------------------- | -------- | -------- | ------------------------------------ |
+| `stagnation_limit`      | int    | 250    | 连续无改进的迭代次数阈值，触发回火 |
+| `REHEAT_DECAY`          | double | 0.9    | 回火幅度衰减系数                   |
+| `REHEAT_THRESHOLD`      | int    | 100    | 连续拒绝阈值（旧版回火触发条件）   |
+| `REHEAT_ROLLBACK_RATIO` | double | 0.6    | 回火时 temp_n 回退比例             |
+| 其余同 FastSA           | —     | —     | 同上                               |
 
 ### GMS_DoubleMatrix（algo 5）— 配置块名 `"GMS_DoubleMatrix"`
 
-| 参数                  | 类型   | 默认值 | 说明                       |
-| --------------------- | ------ | ------ | -------------------------- |
-| `prob_rotate`         | double | 0.1    | 旋转操作概率               |
-| `prob_swap`           | double | 0.8    | 交换操作概率               |
-| `prob_move`           | double | 0.1    | 移动操作概率               |
-| `bias_explore_ratio`  | double | 0.1    | 纯随机探索概率             |
-| 其余同 SA            | —      | —      | 同上                       |
+
+| 参数                 | 类型   | 默认值 | 说明           |
+| ---------------------- | -------- | -------- | ---------------- |
+| `prob_rotate`        | double | 0.1    | 旋转操作概率   |
+| `prob_swap`          | double | 0.8    | 交换操作概率   |
+| `prob_move`          | double | 0.1    | 移动操作概率   |
+| `bias_explore_ratio` | double | 0.1    | 纯随机探索概率 |
+| 其余同 SA            | —     | —     | 同上           |
 
 > 与 GMS（algo 1）的区别：Swap 和 Move 使用**独立的**两个 `BiasSelector` 矩阵。
 
@@ -806,9 +813,8 @@ test_experimrnts/
 
 ## 变更日志
 
-| 版本  | 日期        | 变更内容                                                     |
-| ----- | ----------- | ------------------------------------------------------------ |
-| v2.0  | 2026-06-20  | 添加 algo 6 (GMS_SawTooth_FastSA)；补充各算法全部可调参数表；新增 JSON 配置用法章节；添加 20+ 条常用示例；补充 `.Btree` 输出文件说明；修正统计方法说明（可行解过滤）；标注 `--results_csv` 已停用；补充注意事项。 |
-| v1.0  | —           | 初始版本。                                                   |
 
-
+| 版本 | 日期       | 变更内容                                                                                                                                                                                                         |
+| ------ | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| v2.0 | 2026-06-20 | 添加 algo 6 (GMS_SawTooth_FastSA)；补充各算法全部可调参数表；新增 JSON 配置用法章节；添加 20+ 条常用示例；补充`.Btree` 输出文件说明；修正统计方法说明（可行解过滤）；标注 `--results_csv` 已停用；补充注意事项。 |
+| v1.0 | —         | 初始版本。                                                                                                                                                                                                       |
