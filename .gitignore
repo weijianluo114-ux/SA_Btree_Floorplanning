@@ -9,6 +9,7 @@ results/
 test_experiments/seeds/
 *.json
 tmp/
+seeds/
 
 #docs
 AI_experiments.md
