@@ -474,8 +474,12 @@ def get_sorted_file_pairs(output_dir, max_read=None):
 def run_batch(args):
     """批量处理主逻辑。"""
     script_dir = Path(__file__).resolve().parent
-    output_dir = get_output_dir(script_dir, args.blocks, args.ratio,
-                                args.num_runs, args.algo)
+    
+    if getattr(args, 'floorplan_dir', None):
+        output_dir = Path(args.floorplan_dir).resolve()
+    else:
+        output_dir = get_output_dir(script_dir, args.blocks, args.ratio,
+                                    args.num_runs, args.algo)
 
     if not output_dir.exists():
         print(f"错误: 输出目录不存在: {output_dir}", file=sys.stderr)
@@ -559,42 +563,47 @@ def run_batch(args):
 #  第六部分：主函数
 # ==============================================================
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="绘制芯片布局规划的矩形图及对应的 B*-tree 图"
-    )
+def main(args=None):
+    """绘制 floorplan / B*-tree 图。
+    独立运行: python draw_fixed_outline.py --blocks 100 --ratio 0.1 ...
+    作为模块: main(Namespace(...))  （由 test_scripts.py 调用）
+    """
+    if args is None:
+        parser = argparse.ArgumentParser(
+            description="绘制芯片布局规划的矩形图及对应的 B*-tree 图"
+        )
 
-    # --- 批量模式参数 ---
-    parser.add_argument("--blocks", type=int, default=100,
-                        help="硬模块数量，如 100")
-    parser.add_argument("--ratio", type=float, default=0.1,
-                        help="空白率，如 0.1")
-    parser.add_argument("--num_runs", type=int, default=None,
-                        help="运行次数，如 30")
-    parser.add_argument("-a", "--algo", type=int, default=0,
-                        help="算法模式: 0=SA, 1=GMS, ... (默认0)")
-    parser.add_argument("--max_read", type=int, default=None,
-                        help="最多读取的文件对数（从 run1 开始）")
+        # --- 批量模式参数 ---
+        parser.add_argument("--blocks", type=int, default=100,
+                            help="硬模块数量，如 100")
+        parser.add_argument("--ratio", type=float, default=0.1,
+                            help="空白率，如 0.1")
+        parser.add_argument("--num_runs", type=int, default=None,
+                            help="运行次数，如 30")
+        parser.add_argument("-a", "--algo", type=int, default=0,
+                            help="算法模式: 0=SA, 1=GMS, ... (默认0)")
+        parser.add_argument("--max_read", type=int, default=None,
+                            help="最多读取的文件对数（从 run1 开始）")
 
-    # --- 单文件模式参数 ---
-    parser.add_argument("--floorplan", type=str, default=None,
-                        help="单文件模式: .floorplan 文件路径")
-    parser.add_argument("--btree", type=str, default=None,
-                        help="单文件模式: .Btree 文件路径（可选，不提供则不画树）")
+        # --- 单文件模式参数 ---
+        parser.add_argument("--floorplan", type=str, default=None,
+                            help="单文件模式: .floorplan 文件路径")
+        parser.add_argument("--btree", type=str, default=None,
+                            help="单文件模式: .Btree 文件路径（可选，不提供则不画树）")
 
-    # --- 通用参数 ---
-    parser.add_argument("-o", "--output", type=str, default=None,
-                        help="单文件模式输出目录（默认与 .floorplan 同目录）")
-    parser.add_argument("--dpi", type=int, default=300,
-                        help="输出图片分辨率（默认300）")
-    parser.add_argument("--no_labels", action="store_true",
-                        help="不显示块名称标签")
-    # --- 新增：网表绘制参数 ---
-    parser.add_argument("--draw_nets", action="store_true",
-                        help="启用网表连线绘制（从 testcase/ 读取 .pl 和 .nets）")
-    parser.add_argument("--max_nets_draw", type=int, default=None,
-                        help="最多绘制的网表数量（默认全部），数值越大图越密集")
-    args = parser.parse_args()
+        # --- 通用参数 ---
+        parser.add_argument("-o", "--output", type=str, default=None,
+                            help="单文件模式输出目录（默认与 .floorplan 同目录）")
+        parser.add_argument("--dpi", type=int, default=300,
+                            help="输出图片分辨率（默认300）")
+        parser.add_argument("--no_labels", action="store_true",
+                            help="不显示块名称标签")
+        # --- 新增：网表绘制参数 ---
+        parser.add_argument("--draw_nets", action="store_true",
+                            help="启用网表连线绘制（从 testcase/ 读取 .pl 和 .nets）")
+        parser.add_argument("--max_nets_draw", type=int, default=None,
+                            help="最多绘制的网表数量（默认全部），数值越大图越密集")
+        args = parser.parse_args()
 
     # ===== 单文件模式 =====
     if args.floorplan is not None:
@@ -674,8 +683,6 @@ def main():
             args.num_runs = 1
         run_batch(args)
         return
-
-    
 
     # ===== 参数不足 =====
     print("错误: 请提供 --blocks 和 --ratio（批量模式），或 --floorplan（单文件模式）",

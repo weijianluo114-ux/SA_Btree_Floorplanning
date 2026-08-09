@@ -29,21 +29,21 @@ pip install -r requirements.txt
 根据实验参数自动定位输出目录，批量处理目录下所有 `.floorplan` + `.Btree` 文件对。
 
 ```bash
-cd scripts
-python draw_fixed_outline.py --blocks 100 --ratio 0.1 --num_runs 30 --algo 0 --max_read 5
+python scripts/draw_fixed_outline.py --blocks 100 --ratio 0.1 --num_runs 30 --algo 0 --max_read 5
 ```
 
 **批量模式参数说明：**
 
-| 参数                  | 类型  | 默认值   | 说明                                         |
-| --------------------- | ----- | -------- | -------------------------------------------- |
-| `--blocks`          | int   | 100      | 硬模块数量（如 100、200、300）               |
-| `--ratio`           | float | 0.1      | 空白率（如 0.1、0.15）                       |
-| `--num_runs`        | int   | 1        | 运行次数（即文件对数，如 30）                |
-| `-a` / `--algo`   | int   | 0        | 算法模式：`0` = SA，`1` = GMS               |
-| `--max_read`       | int   | 无限制   | 最多处理的文件对数（从第一个开始取）         |
-| `--draw_nets`      | flag  | 关闭     | **启用网表连线绘制**（从 `testcase/` 读取 `.pl` 和 `.nets`） |
-| `--max_nets_draw`  | int   | 全部     | 最多绘制的网表数量（数值越大图越密集）       |
+
+| 参数              | 类型  | 默认值 | 说明                                                         |
+| ------------------- | ------- | -------- | -------------------------------------------------------------- |
+| `--blocks`        | int   | 100    | 硬模块数量（如 100、200、300）                               |
+| `--ratio`         | float | 0.1    | 空白率（如 0.1、0.15）                                       |
+| `--num_runs`      | int   | 1      | 运行次数（即文件对数，如 30）                                |
+| `-a` / `--algo`   | int   | 0      | 算法模式：`0` = SA，`1` = GMS                                |
+| `--max_read`      | int   | 无限制 | 最多处理的文件对数（从第一个开始取）                         |
+| `--draw_nets`     | flag  | 关闭   | **启用网表连线绘制**（从 `testcase/` 读取 `.pl` 和 `.nets`） |
+| `--max_nets_draw` | int   | 全部   | 最多绘制的网表数量（数值越大图越密集）                       |
 
 **批量模式的目录自动定位规则：**
 
@@ -79,20 +79,21 @@ scripts/../results/floor_plan_figures/test_{blocks}blocks_ratio_{ratio}_total_{n
 
 ```bash
 # 绘制 floorplan + 自动查找同名 .Btree 文件
-python draw_fixed_outline.py --floorplan ../output/xxx/run1_2026-06-09_12:00:00.floorplan
+python scripts/draw_fixed_outline.py --floorplan ../output/xxx/run1_2026-06-09_12:00:00.floorplan
 
 # 手动指定 .Btree 文件
-python draw_fixed_outline.py --floorplan ../output/xxx/run1.floorplan --btree ../output/xxx/run1.Btree
+python scripts/draw_fixed_outline.py --floorplan ../output/xxx/run1.floorplan --btree ../output/xxx/run1.Btree
 ```
 
 **单文件模式参数说明：**
 
-| 参数              | 类型 | 默认值 | 说明                                                         |
-| ----------------- | ---- | ------ | ------------------------------------------------------------ |
-| `--floorplan`   | str  | 无     | `.floorplan` 文件路径（**必填**）                            |
-| `--btree`       | str  | 无     | `.Btree` 文件路径（可选；未指定则自动查找同名 `.Btree`）     |
-| `-o` / `--output` | str  | 无     | 图片输出目录（默认与 `.floorplan` 同目录）                   |
-| `--draw_nets`   | flag | 关闭   | 启用网表连线绘制（自动从 `testcase/` 查找对应的 `.pl` / `.nets`） |
+
+| 参数              | 类型 | 默认值 | 说明                                                             |
+| ------------------- | ------ | -------- | ------------------------------------------------------------------ |
+| `--floorplan`     | str  | 无     | `.floorplan` 文件路径（**必填**）                                |
+| `--btree`         | str  | 无     | `.Btree` 文件路径（可选；未指定则自动查找同名 `.Btree`）         |
+| `-o` / `--output` | str  | 无     | 图片输出目录（默认与`.floorplan` 同目录）                        |
+| `--draw_nets`     | flag | 关闭   | 启用网表连线绘制（自动从`testcase/` 查找对应的 `.pl` / `.nets`） |
 
 > **注意**：单文件模式下图片默认**保存到文件**（与 `.floorplan` 同目录，或 `--output` 指定目录），而非弹出窗口显示。
 
@@ -102,12 +103,13 @@ python draw_fixed_outline.py --floorplan ../output/xxx/run1.floorplan --btree ..
 
 以下参数在两种模式下均可使用：
 
-| 参数              | 类型 | 默认值 | 说明                                         |
-| ----------------- | ---- | ------ | -------------------------------------------- |
-| `--dpi`         | int  | 300    | 输出图片分辨率，值越大图片越清晰但文件也越大 |
-| `--no_labels`   | flag | 关闭   | 指定后矩形块中央**不显示**块名称标签（仅单文件模式生效） |
-| `--draw_nets`   | flag | 关闭   | 启用网表连线绘制                             |
-| `--max_nets_draw` | int | 全部   | 最多绘制的网表数量                           |
+
+| 参数              | 类型 | 默认值 | 说明                                                     |
+| ------------------- | ------ | -------- | ---------------------------------------------------------- |
+| `--dpi`           | int  | 300    | 输出图片分辨率，值越大图片越清晰但文件也越大             |
+| `--no_labels`     | flag | 关闭   | 指定后矩形块中央**不显示**块名称标签（仅单文件模式生效） |
+| `--draw_nets`     | flag | 关闭   | 启用网表连线绘制                                         |
+| `--max_nets_draw` | int  | 全部   | 最多绘制的网表数量                                       |
 
 > ⚠️ **注意**：当前批量模式下 `--no_labels` 不生效（`show_labels` 硬编码为 `True`），如需关闭标签请使用单文件模式。
 
@@ -130,13 +132,14 @@ sb1 330 67 65 37 0
 
 **数据行格式：** `名称 x y 参数3 参数4 方向`
 
-| 字段      | 说明                                     |
-| --------- | ---------------------------------------- |
-| `名称`  | 模块名称，如 `sb0`, `sb1`, ...       |
-| `x`     | 模块左下角的 x 坐标（整数）              |
-| `y`     | 模块左下角的 y 坐标（整数）              |
-| `参数3` | 见下方方向说明                           |
-| `参数4` | 见下方方向说明                           |
+
+| 字段    | 说明                                 |
+| --------- | -------------------------------------- |
+| `名称`  | 模块名称，如`sb0`, `sb1`, ...        |
+| `x`     | 模块左下角的 x 坐标（整数）          |
+| `y`     | 模块左下角的 y 坐标（整数）          |
+| `参数3` | 见下方方向说明                       |
+| `参数4` | 见下方方向说明                       |
 | `方向`  | `0` 或 `1`，决定如何解析参数3和参数4 |
 
 **方向字段解析规则：**
@@ -161,9 +164,10 @@ Root: 4                      # 根节点 ID
 ...
 ```
 
-| 字段         | 说明                                                     |
-| ------------ | -------------------------------------------------------- |
-| `Root: id` | 根节点的 ID                                              |
+
+| 字段         | 说明                                                 |
+| -------------- | ------------------------------------------------------ |
+| `Root: id`   | 根节点的 ID                                          |
 | 每行四个整数 | `节点ID 父节点ID 左子节点ID 右子节点ID`，`-1` 表示空 |
 
 ### 4.3 `.pl` 文件格式（新增）
@@ -230,16 +234,16 @@ NetDegree : 3
 cd scripts
 
 # 处理 n100, ratio=0.1, 30次运行, SA算法, 只取前5对文件
-python draw_fixed_outline.py --blocks 100 --ratio 0.1 --num_runs 30 --algo 0 --max_read 5
+python scripts/draw_fixed_outline.py --blocks 100 --ratio 0.1 --num_runs 30 --algo 0 --max_read 5
 
 # 处理 n200, ratio=0.15, 50次运行, GMS算法
-python draw_fixed_outline.py --blocks 200 --ratio 0.15 --num_runs 50 --algo 1
+python scripts/draw_fixed_outline.py --blocks 200 --ratio 0.15 --num_runs 50 --algo 1
 
 # 处理 n300, 同时绘制网表连线, 限制最多20个网表
-python draw_fixed_outline.py --blocks 300 --ratio 0.1 --num_runs 20 --algo 0 --draw_nets --max_nets_draw 20
+python scripts/draw_fixed_outline.py --blocks 300 --ratio 0.1 --num_runs 20 --algo 0 --draw_nets --max_nets_draw 20
 
 # 不带标签, 提高分辨率（注意：--no_labels 在批量模式下当前不生效）
-python draw_fixed_outline.py --blocks 300 --ratio 0.1 --num_runs 20 --algo 0 --no_labels --dpi 600
+python scripts/draw_fixed_outline.py --blocks 300 --ratio 0.1 --num_runs 20 --algo 0 --no_labels --dpi 600
 ```
 
 ### 单文件预览
@@ -248,10 +252,10 @@ python draw_fixed_outline.py --blocks 300 --ratio 0.1 --num_runs 20 --algo 0 --n
 cd scripts
 
 # 绘制 floorplan + 自动查找同名的 .Btree 文件
-python draw_fixed_outline.py --floorplan ../output/test_100blocks_ratio_0_1_total_30_algo0/run1_2026-06-09_12:00:00.floorplan
+python scripts/draw_fixed_outline.py --floorplan ../output/test_100blocks_ratio_0_1_total_30_algo0/run1_2026-06-09_12:00:00.floorplan
 
 # 指定 btree 文件, 保存到指定目录
-python draw_fixed_outline.py --floorplan ../output/xxx/run1.floorplan --btree ../output/xxx/run1.Btree -o ./my_figures
+python scripts/draw_fixed_outline.py --floorplan ../output/xxx/run1.floorplan --btree ../output/xxx/run1.Btree -o ./my_figures
 
 # 启用网表连线
 python draw_fixed_outline.py --floorplan ../output/xxx/run1.floorplan --draw_nets --max_nets_draw 30
@@ -263,19 +267,20 @@ python draw_fixed_outline.py --floorplan ../output/xxx/run1.floorplan --draw_net
 
 如果需要调整图形的外观，可以修改脚本中的以下参数：
 
-| 效果                    | 脚本中对应的参数                                              | 位置（函数）           |
-| ----------------------- | ------------------------------------------------------------- | ---------------------- |
-| 矩形填充色              | `facecolor='lightblue'`                                     | `draw_floorplan()`   |
-| 矩形透明度              | `alpha=0.7`                                                 | `draw_floorplan()`   |
-| 矩形边框宽度            | `linewidth=1.5`                                             | `draw_floorplan()`   |
-| 标签字体大小            | `fontsize=8`                                                | `draw_floorplan()`   |
-| 节点颜色                | `color='lightblue'`                                         | `draw_btree()`       |
-| 节点大小                | `markersize=20`                                             | `draw_btree()`       |
-| 树中标签字体大小        | `fontsize=6`                                                | `draw_btree()`       |
-| 图片尺寸（floorplan）   | `figsize=(12, 10)`                                          | `draw_floorplan()`   |
-| 树图尺寸                | `fig_w = max(5, tree_width * 0.19)` / `fig_h = max(5, tree_depth * 1.3)` | `draw_btree()` |
-| 网表连线颜色            | `cm.tab20` 色表循环                                          | `draw_nets_on_floorplan()` |
-| 网表连线宽度/透明度     | `linewidth=0.6, alpha=0.6`                                  | `draw_nets_on_floorplan()` |
+
+| 效果                  | 脚本中对应的参数                                                         | 位置（函数）               |
+| ----------------------- | -------------------------------------------------------------------------- | ---------------------------- |
+| 矩形填充色            | `facecolor='lightblue'`                                                  | `draw_floorplan()`         |
+| 矩形透明度            | `alpha=0.7`                                                              | `draw_floorplan()`         |
+| 矩形边框宽度          | `linewidth=1.5`                                                          | `draw_floorplan()`         |
+| 标签字体大小          | `fontsize=8`                                                             | `draw_floorplan()`         |
+| 节点颜色              | `color='lightblue'`                                                      | `draw_btree()`             |
+| 节点大小              | `markersize=20`                                                          | `draw_btree()`             |
+| 树中标签字体大小      | `fontsize=6`                                                             | `draw_btree()`             |
+| 图片尺寸（floorplan） | `figsize=(12, 10)`                                                       | `draw_floorplan()`         |
+| 树图尺寸              | `fig_w = max(5, tree_width * 0.19)` / `fig_h = max(5, tree_depth * 1.3)` | `draw_btree()`             |
+| 网表连线颜色          | `cm.tab20` 色表循环                                                      | `draw_nets_on_floorplan()` |
+| 网表连线宽度/透明度   | `linewidth=0.6, alpha=0.6`                                               | `draw_nets_on_floorplan()` |
 
 ---
 
@@ -308,32 +313,33 @@ A: 当前版本单文件模式默认**保存到文件**（与 `.floorplan` 同�
 
 旧版文档存在以下过时/不准确之处，新版已全部修正：
 
-| 旧版                                                         | 新版                                                          |
-| ------------------------------------------------------------ | ------------------------------------------------------------- |
-| 仅描述矩形图绘制                                             | 新增 B\*-tree 图绘制、网表连线绘制的完整说明                  |
-| 只有单文件使用方式                                           | 新增批量模式的完整说明                                        |
-| 缺少 `.Btree` 文件格式说明                                   | 补充了 `.Btree` 文件格式的解析规则                            |
-| 单文件模式描述为"弹出窗口显示（不保存到文件）"               | 单文件模式默认保存到文件，可通过 `-o` 指定输出目录           |
-| 使用过时的运行命令                                           | 更新为当前脚本支持的所有参数和用法                            |
-| —                                                            | 新增 `--draw_nets` / `--max_nets_draw` / `--output` 参数说明 |
-| —                                                            | 新增 `.pl` 和 `.nets` 文件格式说明                            |
-| —                                                            | 新增网表叠加绘制的可视化定制说明                              |
-| —                                                            | 新增 `--no_labels` 在批量模式下不生效的说明                   |
-| Floorplan 图有网格和标题                                     | 当前版本已去除网格和标题，隐藏上/右框线                       |
-| B-tree 图固定画布尺寸                                        | 当前版本根据树的宽度/深度动态计算紧凑画布尺寸                 |
 
+| 旧版                                           | 新版                                                        |
+| ------------------------------------------------ | ------------------------------------------------------------- |
+| 仅描述矩形图绘制                               | 新增 B\*-tree 图绘制、网表连线绘制的完整说明                |
+| 只有单文件使用方式                             | 新增批量模式的完整说明                                      |
+| 缺少`.Btree` 文件格式说明                      | 补充了`.Btree` 文件格式的解析规则                           |
+| 单文件模式描述为"弹出窗口显示（不保存到文件）" | 单文件模式默认保存到文件，可通过`-o` 指定输出目录           |
+| 使用过时的运行命令                             | 更新为当前脚本支持的所有参数和用法                          |
+| —                                             | 新增`--draw_nets` / `--max_nets_draw` / `--output` 参数说明 |
+| —                                             | 新增`.pl` 和 `.nets` 文件格式说明                           |
+| —                                             | 新增网表叠加绘制的可视化定制说明                            |
+| —                                             | 新增`--no_labels` 在批量模式下不生效的说明                  |
+| Floorplan 图有网格和标题                       | 当前版本已去除网格和标题，隐藏上/右框线                     |
+| B-tree 图固定画布尺寸                          | 当前版本根据树的宽度/深度动态计算紧凑画布尺寸               |
 
 ---
 
 ## 主要变更总结
 
-| 项目 | 旧版 (MD) | 新版 (代码实际行为) |
-|------|-----------|-------------------|
-| **网表可视化** | 不存在 | 新增 `--draw_nets` / `--max_nets_draw`，叠加彩色连线 |
-| **文件格式说明** | 仅 `.floorplan` + `.Btree` | 新增 `.pl` / `.nets` 格式说明 |
-| **单文件模式** | "弹出窗口显示" | **默认保存到文件**，可用 `-o` 指定目录 |
-| **新增参数** | — | `--draw_nets`, `--max_nets_draw`, `--output` / `-o` |
-| **Floorplan 外观** | 有网格线 + 标题 | **无网格、无标题**，隐藏上/右框线 |
-| **B-tree 画布** | 固定尺寸 | **动态紧凑布局**（根据树宽/深计算） |
-| **批量模式 --no_labels** | 描述为通用参数 | **实际不生效**（硬编码为 True），已标注 |
-| **输出文件** | 每 run 2 张图 | 启用 `--draw_nets` 时额外生成 `*_with_nets.png` |
+
+| 项目                     | 旧版 (MD)                 | 新版 (代码实际行为)                                 |
+| -------------------------- | --------------------------- | ----------------------------------------------------- |
+| **网表可视化**           | 不存在                    | 新增`--draw_nets` / `--max_nets_draw`，叠加彩色连线 |
+| **文件格式说明**         | 仅`.floorplan` + `.Btree` | 新增`.pl` / `.nets` 格式说明                        |
+| **单文件模式**           | "弹出窗口显示"            | **默认保存到文件**，可用 `-o` 指定目录              |
+| **新增参数**             | —                        | `--draw_nets`, `--max_nets_draw`, `--output` / `-o` |
+| **Floorplan 外观**       | 有网格线 + 标题           | **无网格、无标题**，隐藏上/右框线                   |
+| **B-tree 画布**          | 固定尺寸                  | **动态紧凑布局**（根据树宽/深计算）                 |
+| **批量模式 --no_labels** | 描述为通用参数            | **实际不生效**（硬编码为 True），已标注             |
+| **输出文件**             | 每 run 2 张图             | 启用`--draw_nets` 时额外生成 `*_with_nets.png`      |

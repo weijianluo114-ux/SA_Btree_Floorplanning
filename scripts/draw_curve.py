@@ -365,30 +365,35 @@ def plot_rejection_rates(csv_files, output_dir, algo=0, n_top=60):
     print(f"已保存: {filepath}")
 
 # ---------- 主函数 ----------
-def main():
-    parser = argparse.ArgumentParser(description="批量绘制模拟退火曲线（支持多个run文件）")
-    parser.add_argument("--csv", type=str, default=None,
-                        help="CSV 文件路径 或 包含多个CSV的目录。若为目录，则处理其中所有 curve_data_run*.csv 文件。"
-                             "若未指定，则自动使用 ./results/curve_results 下的最新时间戳文件夹。")
-    parser.add_argument("--output_dir", type=str, default=None,
-                        help="图片输出根目录（默认 ./results/curve_figures）。每个run的图片会放在该目录下的子文件夹中。")
-    parser.add_argument("--sample_step", type=int, default=100,
-                        help="绘图时每多少点采样一次（默认100）")
-    parser.add_argument("--rejection-rate", nargs='?', const='auto', default=None,
-                        help="绘制拒绝率图：指定包含 curve_data_run*.csv 的目录路径，"
-                         "会读取该目录下所有CSV文件并绘制在同一张散点图上。"
-                         "纵轴=T_reject/T_Moves，横轴=温度，取前60个最高温度。")
-    parser.add_argument("--rr-n-top", type=int, default=60,
-                        help="与 --rejection-rate 配合使用...")
-    # 新增
-    parser.add_argument("--n_top", type=int, default=0,
-                        help="额外绘制前 N 个数据点的曲线图（若超出总行数则绘制全部）")
-    parser.add_argument("--n_back", type=int, default=0,
-                        help="额外绘制后 N 个数据点的曲线图（若超出总行数则绘制全部）")
-    parser.add_argument("--tune", nargs='?', const='auto', default=None,
-                        help="调优模式：读取最新 tune_* 文件夹下所有 param_*/curve_data.csv 并绘图。"
-                         "可指定具体路径，或留空自动选择最新。")
-    args = parser.parse_args()
+def main(args=None):
+    """绘制模拟退火曲线。
+    独立运行: python draw_curve.py --csv xxx.csv ...
+    作为模块: main(Namespace(...))  （由 test_scripts.py 调用）
+    """
+    if args is None:
+        parser = argparse.ArgumentParser(description="批量绘制模拟退火曲线（支持多个run文件）")
+        parser.add_argument("--csv", type=str, default=None,
+                            help="CSV 文件路径 或 包含多个CSV的目录。若为目录，则处理其中所有 curve_data_run*.csv 文件。"
+                                "若未指定，则自动使用 ./results/curve_results 下的最新时间戳文件夹。")
+        parser.add_argument("--output_dir", type=str, default=None,
+                            help="图片输出根目录（默认 ./results/curve_figures）。每个run的图片会放在该目录下的子文件夹中。")
+        parser.add_argument("--sample_step", type=int, default=100,
+                            help="绘图时每多少点采样一次（默认100）")
+        parser.add_argument("--rejection-rate", nargs='?', const='auto', default=None,
+                            help="绘制拒绝率图：指定包含 curve_data_run*.csv 的目录路径，"
+                            "会读取该目录下所有CSV文件并绘制在同一张散点图上。"
+                            "纵轴=T_reject/T_Moves，横轴=温度，取前60个最高温度。")
+        parser.add_argument("--rr-n-top", type=int, default=60,
+                            help="与 --rejection-rate 配合使用...")
+        # 新增
+        parser.add_argument("--n_top", type=int, default=0,
+                            help="额外绘制前 N 个数据点的曲线图（若超出总行数则绘制全部）")
+        parser.add_argument("--n_back", type=int, default=0,
+                            help="额外绘制后 N 个数据点的曲线图（若超出总行数则绘制全部）")
+        parser.add_argument("--tune", nargs='?', const='auto', default=None,
+                            help="调优模式：读取最新 tune_* 文件夹下所有 param_*/curve_data.csv 并绘图。"
+                            "可指定具体路径，或留空自动选择最新。")
+        args = parser.parse_args()
 
     script_dir = Path(__file__).resolve().parent
     results_curve_root = script_dir / "../results/curve_results"

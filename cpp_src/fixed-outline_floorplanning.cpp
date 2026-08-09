@@ -24,7 +24,7 @@ using namespace std;
 
 //---------------------new MACRO------------------------//
 // #define DEBUG 1
-#define CURVE_MODE 1
+#define CURVE_MODE 0
 
 //======================================================//
 

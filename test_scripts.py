@@ -4,7 +4,8 @@
 用法示例:
     python run_experiments.py --num-runs 100 --white-space-ratio 0.1
 """
-
+import importlib.util
+from argparse import Namespace
 import argparse
 import subprocess
 import sys
@@ -30,12 +31,14 @@ def parse_args():
     parser = argparse.ArgumentParser(description="批量运行 hw3_dbg 并收集结果")
     parser.add_argument("--executable", type=str, default="./bin/hw3_dbg",
                         help="可执行文件路径（相对于脚本位置）")
-    parser.add_argument("--hardblocks", type=str, default="./testcase/n100.hardblocks",
-                        help="hardblocks 文件路径")
-    parser.add_argument("--nets", type=str, default="./testcase/n100.nets",
-                        help="nets 文件路径")
-    parser.add_argument("--terminals", type=str, default="./testcase/n100.pl",
-                        help="terminals 文件路径")
+    parser.add_argument("--circuit", type=str, default="n10", choices=['n10', 'n30', 'n50', 'n100', 'n200', 'n300'],
+                        help="auto-load ./testcase/<circuit>.hardblocks(.nets/.pl)")
+    # parser.add_argument("--hardblocks", type=str, default="./testcase/n100.hardblocks",
+    #                     help="hardblocks 文件路径")
+    # parser.add_argument("--nets", type=str, default="./testcase/n100.nets",
+    #                     help="nets 文件路径")
+    # parser.add_argument("--terminals", type=str, default="./testcase/n100.pl",
+    #                     help="terminals 文件路径")
     parser.add_argument("--white_space_ratio", type=float, default=0.1,
                         help="空白比例")
     parser.add_argument("--num_runs", type=int, default=20,
@@ -56,12 +59,37 @@ def parse_args():
                         help="算法模式: 0=原始算法, 1=GMS, 2=... (默认0)")
     parser.add_argument("--tune", type=str, default=None,
                         help="调优配置文件（YAML），对某个参数进行网格搜索。例如: --tune tune_config.yaml")
+
+    # draw_code
+    parser.add_argument("--draw_fp", action="store_true",
+                    help="批量实验完成后自动绘制 floorplan 与 B*-tree 图（调用 scripts/draw_fixed_outline.py）")
+    parser.add_argument("--draw_curve", action="store_true",
+                        help="曲线记录完成后自动绘制模拟退火曲线（调用 scripts/draw_curve.py，需 --record_curve）")
+    parser.add_argument("--draw_nets", action="store_true",
+                        help="绘制 floorplan 时叠加网表连线（需配合 --draw_fp）")
+    parser.add_argument("--max_nets_draw", type=int, default=None,
+                        help="绘制网表的最大数量（需配合 --draw_nets）")
+    parser.add_argument("--fp_dpi", type=int, default=120,
+                        help="floorplan 图片分辨率（默认300）")
+    
     return parser.parse_args()
 
 # ---------- 辅助函数 ----------
 def get_script_dir() -> Path:
     """返回脚本所在目录"""
     return Path(__file__).resolve().parent
+
+def _load_scripts_module(module_name: str):
+    """从 scripts/ 目录加载绘图脚本模块（懒加载，避免强制引入 matplotlib/pandas）"""
+    scripts_dir = get_script_dir() / "scripts"
+    file_path = scripts_dir / f"{module_name}.py"
+    if not file_path.exists():
+        print(f"错误: 找不到绘图脚本 {file_path}", file=sys.stderr)
+        sys.exit(1)
+    spec = importlib.util.spec_from_file_location(module_name, file_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 def ensure_dir(path: Path) -> None:
     """确保目录存在"""
@@ -148,7 +176,7 @@ def parse_output(output_text: str) -> Dict[str, Optional[float]]:
         "R": r"R:\s+([0-9.]+)",
         "Cost": r"Cost:\s+([0-9.]+)",
         "BTree_T_us": r"\[BuildInitBtree\] 耗时:\s+(\d+)\s*us",
-        "SA_T_s": r"\[SimulatedAnnealing\] 耗时:\s+([0-9.]+)\s*s",
+        "SA_T_s": r"\[SimulatedAnnealing\] 耗时:\s+([0-9.]+)\s*(ms|s)",
     }
     
     result = {}
@@ -157,8 +185,12 @@ def parse_output(output_text: str) -> Dict[str, Optional[float]]:
         if val is None:
             result[key] = None
             continue
-        if key in ["BTree_T_us", "SA_T_s"]:
+        if key in ["BTree_T_us"]:
             result[key] = float(val)
+        if key in ['SA_T_s']:
+            value = float(val[0]) if isinstance(val, tuple) else float(val)
+            unit = val[1] if isinstance(val, tuple) else 's'
+            result[key] = value / 1000.0 if unit == 'ms' else value
         elif '.' in val:
             result[key] = float(val)
         else:
@@ -429,8 +461,8 @@ def compile_and_check(exec_path: Path, script_dir: Path, skip_make: bool) -> Non
 def resolve_output_dir(script_dir: Path, args) -> Path:
     """解析输出目录路径"""
     if args.output_dir is None:
-        match = re.search(r'(\d+)', args.hardblocks)
-        num_blocks = match.group(1) if match else "unknown"
+        circuit = args.circuit or 'n10' #use args.circuit
+        num_blocks = circuit.lstrip('n')
         ratio_str = str(args.white_space_ratio).replace('.', '_')
         output_dir = (script_dir / f"./output/test_{num_blocks}blocks_ratio_"
                       f"{ratio_str}_total_{args.num_runs}_algo{args.algo}")
@@ -468,11 +500,13 @@ def write_log_header(log_file: Path, hardblocks: str, nets: str, terminals: str,
 
 
 def resolve_common_paths(script_dir: Path, args) -> Tuple[Path, str, str, str]:
-    """解析可执行文件和测试文件路径（exec, hardblocks, nets, terminals）"""
+    """解析可执行文件和测试文件路径(exec, hardblocks, nets, terminals)"""
     exec_path = (script_dir / args.executable).resolve()
-    hardblocks = str((script_dir / args.hardblocks).resolve())
-    nets = str((script_dir / args.nets).resolve())
-    terminals = str((script_dir / args.terminals).resolve())
+    
+    circuit = args.circuit or 'n10' # use args.circuit as first choich
+    hardblocks = str((script_dir / f'./testcase/{circuit}.hardblocks').resolve())
+    nets = str((script_dir / f'./testcase/{circuit}.nets').resolve())
+    terminals = str((script_dir / f'./testcase/{circuit}.pl').resolve())
     return exec_path, hardblocks, nets, terminals
 
 def run_tuning(args):
@@ -707,7 +741,7 @@ def run_tuning(args):
 # ---------- 主函数 ----------
 def main():
     args = parse_args()
-    
+      
     # ===== 新增：调优模式 =====
     if args.tune:
         run_tuning(args)
@@ -861,6 +895,46 @@ def main():
     print_statistics_to_console(table_data, args.algo)
     write_statistics_to_log(log_file, table_data, args.algo,
                             mode_desc="曲线模式" if args.record_curve else "批量实验模式")
+
+    # ---- 可选：自动绘制 floorplan / B*-tree 图 ----
+    if args.draw_fp:
+        draw_fp = _load_scripts_module("draw_fixed_outline")
+        fp_args = Namespace(
+            blocks=int(args.circuit.lstrip('n')),   # 由 circuit 推导块数
+            ratio=args.white_space_ratio,
+            num_runs=args.num_runs,
+            algo=args.algo,
+            max_read=None,
+            floorplan=None,
+            btree=None,
+            output=None,
+            dpi=args.fp_dpi,
+            no_labels=False,
+            draw_nets=args.draw_nets,
+            max_nets_draw=args.max_nets_draw,
+            floorplan_dir=str(output_dir),          # 显式传入实验输出目录
+        )
+        draw_fp.main(fp_args)
+
+    # ---- 可选：自动绘制模拟退火曲线 ----
+    if args.draw_curve:
+        if not args.record_curve:
+            print("提示: --draw_curve 仅在 --record_curve 模式下生效，跳过")
+        else:
+            draw_curve = _load_scripts_module("draw_curve")
+            curve_dir = (script_dir / "results" / "curve_results"
+                         / f"curve_data{algo_tag}_{timestamp}{algo_tag}")
+            curve_args = Namespace(
+                csv=str(curve_dir),      # 指向本次实验的曲线 CSV 目录
+                output_dir=None,         # 默认输出到 results/curve_figures/
+                sample_step=100,
+                rejection_rate=None,
+                rr_n_top=60,
+                n_top=0,
+                n_back=0,
+                tune=None,
+            )
+            draw_curve.main(curve_args)
 
     print(f"\n完整日志保存在: {log_file}")
     print("全部完成。")

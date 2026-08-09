@@ -660,9 +660,8 @@ python test_scripts.py \
 
 ```bash
 # n100
-python test_scripts.py --hardblocks ./testcase/n100.hardblocks \
-    --nets ./testcase/n100.nets --terminals ./testcase/n100.pl \
-    --num_runs 30 --white_space_ratio 0.1
+python test_scripts.py --circuit n10 \
+    --num_runs 1 --white_space_ratio 0.1
 
 # n200
 python test_scripts.py --hardblocks ./testcase/n200.hardblocks \
