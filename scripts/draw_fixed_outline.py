@@ -470,6 +470,65 @@ def get_sorted_file_pairs(output_dir, max_read=None):
 
     return pairs
 
+def run_tune(args):
+    """调优模式：按参数值读取 output/param_*/ 下的 floorplan + Btree 并绘图。"""
+    script_dir = Path(__file__).resolve().parent
+    tune_dir = Path(args.tune).resolve()
+    if not tune_dir.is_dir():
+        print(f"错误: 调优目录不存在: {tune_dir}", file=sys.stderr)
+        sys.exit(1)
+
+    output_dir = tune_dir / "output"
+    if not output_dir.is_dir():
+        print(f"错误: 未找到调优输出目录: {output_dir}", file=sys.stderr)
+        sys.exit(1)
+
+    # 图片输出目录：默认 tune_dir/figures/，可用 --output 覆盖
+    fig_root = Path(args.output).resolve() if getattr(args, 'output', None) else tune_dir / "figures"
+    fig_root.mkdir(parents=True, exist_ok=True)
+
+    # 从调优目录名提取 algo（如 HH-MM-SS_tune_a0_r_0.8-0.9）
+    algo_match = re.search(r"_a(\d+)_", tune_dir.name)
+    algo = int(algo_match.group(1)) if algo_match else args.algo
+
+    # 每个参数值一个子目录
+    param_dirs = sorted(d for d in output_dir.iterdir()
+                        if d.is_dir() and d.name.startswith("param_"))
+    if not param_dirs:
+        print("错误: output/ 下没有 param_* 子目录（请先运行新结构的调优）", file=sys.stderr)
+        sys.exit(1)
+
+    total = 0
+    for param_dir in param_dirs:
+        pairs = get_sorted_file_pairs(param_dir, args.max_read)
+        if not pairs:
+            print(f"  警告: {param_dir.name} 中无 .floorplan + .Btree 文件对")
+            continue
+
+        # 由第一个 floorplan 推断块数
+        _, blocks = parse_floorplan_file(str(pairs[0][0]))
+        num_blocks = len(blocks) if blocks else args.blocks
+        block_names = [f"sb{i}" for i in range(num_blocks)]
+
+        out_sub = fig_root / param_dir.name
+        out_sub.mkdir(parents=True, exist_ok=True)
+
+        for fp_path, bt_path in pairs:
+            stem = fp_path.stem
+            print(f"\n  [{param_dir.name}] 处理 {stem}")
+            chip_width, blocks = parse_floorplan_file(str(fp_path))
+            if blocks:
+                fp_img = out_sub / f"{stem}_floorplan.png"
+                draw_floorplan(blocks, chip_width, output_image=str(fp_img),
+                               show_labels=True, dpi=args.dpi, algo=algo)
+            root_id, children = parse_btree_file(str(bt_path), num_blocks)
+            if root_id >= 0:
+                bt_img = out_sub / f"{stem}_btree.png"
+                draw_btree(root_id, children, block_names,
+                           output_image=str(bt_img), dpi=args.dpi)
+            total += 1
+
+    print(f"\n调优模式绘制完成，共 {total} 对文件，图片保存至: {fig_root}")
 
 def run_batch(args):
     """批量处理主逻辑。"""
@@ -493,10 +552,13 @@ def run_batch(args):
 
     print(f"找到 {len(pairs)} 对文件，输出目录: {output_dir}")
 
-    # 图片输出目录
+    # 图片输出目录（支持 --output 覆盖；默认 results/floor_plan_figures/...）
     ratio_str = str(args.ratio).replace('.', '_')
     dir_name = f"test_{args.blocks}blocks_ratio_{ratio_str}_total_{args.num_runs}_algo{args.algo}"
-    fig_dir = script_dir / "../results/floor_plan_figures" / dir_name
+    if getattr(args, 'output', None):
+        fig_dir = Path(args.output).resolve()
+    else:
+        fig_dir = script_dir / "../results/floor_plan_figures" / dir_name
     fig_dir.mkdir(parents=True, exist_ok=True)
 
     # ---- 新增：如果启用了网表绘制，提前加载 .pl 和 .nets 文件 ----
@@ -590,6 +652,8 @@ def main(args=None):
                             help="单文件模式: .floorplan 文件路径")
         parser.add_argument("--btree", type=str, default=None,
                             help="单文件模式: .Btree 文件路径（可选，不提供则不画树）")
+        parser.add_argument("--floorplan_dir", type=str, default=None,
+                            help="批量模式：显式指定 .floorplan/.Btree 所在目录（默认按 blocks/ratio/num_runs/algo 自动推导）")
 
         # --- 通用参数 ---
         parser.add_argument("-o", "--output", type=str, default=None,
@@ -598,12 +662,21 @@ def main(args=None):
                             help="输出图片分辨率（默认300）")
         parser.add_argument("--no_labels", action="store_true",
                             help="不显示块名称标签")
-        # --- 新增：网表绘制参数 ---
+        
+        # --- 网表绘制参数 ---
         parser.add_argument("--draw_nets", action="store_true",
                             help="启用网表连线绘制（从 testcase/ 读取 .pl 和 .nets）")
         parser.add_argument("--max_nets_draw", type=int, default=None,
                             help="最多绘制的网表数量（默认全部），数值越大图越密集")
+        
+        parser.add_argument("--tune", type=str, default=None,
+                            help="调优模式：传入调优运行目录（log/.../HH-MM-SS_tune_*），按参数值绘制 output/param_*/ 下的 floorplan/B*-tree")
         args = parser.parse_args()
+
+    # ===== 调优模式 =====
+    if getattr(args, 'tune', None):
+        run_tune(args)
+        return
 
     # ===== 单文件模式 =====
     if args.floorplan is not None:

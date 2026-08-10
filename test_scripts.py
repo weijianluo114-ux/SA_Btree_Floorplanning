@@ -11,68 +11,12 @@ import subprocess
 import sys
 import random
 import re
-import csv
-import os
 import json
+import yaml
 from pathlib import Path
 from datetime import datetime
 import statistics
 from typing import Dict, List, Optional, Tuple
-
-# yaml 为可选导入，未安装时在 run_tuning 中报友好提示
-try:
-    import yaml
-except ImportError:
-    yaml = None
-
-
-# ---------- 参数解析 ----------
-def parse_args():
-    parser = argparse.ArgumentParser(description="批量运行 hw3_dbg 并收集结果")
-    parser.add_argument("--executable", type=str, default="./bin/hw3_dbg",
-                        help="可执行文件路径（相对于脚本位置）")
-    parser.add_argument("--circuit", type=str, default="n10", choices=['n10', 'n30', 'n50', 'n100', 'n200', 'n300'],
-                        help="auto-load ./testcase/<circuit>.hardblocks(.nets/.pl)")
-    # parser.add_argument("--hardblocks", type=str, default="./testcase/n100.hardblocks",
-    #                     help="hardblocks 文件路径")
-    # parser.add_argument("--nets", type=str, default="./testcase/n100.nets",
-    #                     help="nets 文件路径")
-    # parser.add_argument("--terminals", type=str, default="./testcase/n100.pl",
-    #                     help="terminals 文件路径")
-    parser.add_argument("--white_space_ratio", type=float, default=0.1,
-                        help="空白比例")
-    parser.add_argument("--num_runs", type=int, default=20,
-                        help="运行次数")
-    parser.add_argument("--output_dir", type=str, default=None,
-                        help="floorplan 输出目录（自动生成前缀）")
-    parser.add_argument("--log_file", type=str, default=None,
-                        help="完整日志文件路径（原始输出）")
-    parser.add_argument("--seed_file", type=str, default=None,
-                        help="种子文件路径")
-    parser.add_argument("--results_csv", type=str, default=None,
-                        help="结果表格 CSV 文件路径")
-    parser.add_argument("--skip_make", action="store_true",
-                        help="跳过 make 编译步骤")
-    parser.add_argument("--record_curve", action="store_true",
-                        help="记录模拟退火过程中的详细参数曲线")
-    parser.add_argument("-a","--algo", type=int, default=0,
-                        help="算法模式: 0=原始算法, 1=GMS, 2=... (默认0)")
-    parser.add_argument("--tune", type=str, default=None,
-                        help="调优配置文件（YAML），对某个参数进行网格搜索。例如: --tune tune_config.yaml")
-
-    # draw_code
-    parser.add_argument("--draw_fp", action="store_true",
-                    help="批量实验完成后自动绘制 floorplan 与 B*-tree 图（调用 scripts/draw_fixed_outline.py）")
-    parser.add_argument("--draw_curve", action="store_true",
-                        help="曲线记录完成后自动绘制模拟退火曲线（调用 scripts/draw_curve.py，需 --record_curve）")
-    parser.add_argument("--draw_nets", action="store_true",
-                        help="绘制 floorplan 时叠加网表连线（需配合 --draw_fp）")
-    parser.add_argument("--max_nets_draw", type=int, default=None,
-                        help="绘制网表的最大数量（需配合 --draw_nets）")
-    parser.add_argument("--fp_dpi", type=int, default=120,
-                        help="floorplan 图片分辨率（默认300）")
-    
-    return parser.parse_args()
 
 # ---------- 辅助函数 ----------
 def get_script_dir() -> Path:
@@ -185,9 +129,9 @@ def parse_output(output_text: str) -> Dict[str, Optional[float]]:
         if val is None:
             result[key] = None
             continue
-        if key in ["BTree_T_us"]:
+        if key == "BTree_T_us":
             result[key] = float(val)
-        if key in ['SA_T_s']:
+        elif key == 'SA_T_s':
             value = float(val[0]) if isinstance(val, tuple) else float(val)
             unit = val[1] if isinstance(val, tuple) else 's'
             result[key] = value / 1000.0 if unit == 'ms' else value
@@ -207,28 +151,21 @@ def parse_output(output_text: str) -> Dict[str, Optional[float]]:
 def run_single(exec_path: Path, hardblocks: str, nets: str, terminals: str,
                floorplan_file: Path, ratio: float, seed: int, algo:int = 0, curve:bool = False) -> Tuple[str, Dict[str, Optional[float]], int]:
     """
-    运行n次实验，返回 (原始输出, 提取的指标字典, 返回码)
+    运行单次实验（无临时配置），返回 (原始输出, 提取的指标字典, 返回码)。
+    等价于 run_single_with_config(config_file=None)，为保留旧调用点而保留的薄封装。
     """
-    cmd = [str(exec_path), "--algo", str(algo)]
-    if curve:
-        cmd.append("--curve")
-    cmd.extend([hardblocks, nets, terminals, str(floorplan_file), str(ratio), str(seed)])
-    
-    try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
-        output = proc.stdout + proc.stderr
-        metrics = parse_output(output)
-        return output, metrics, proc.returncode
-    except Exception as e:
-        error_output = f"运行失败: {e}\n"
-        return error_output, {}, -1
+    return run_single_with_config(
+        exec_path, hardblocks, nets, terminals,
+        floorplan_file, ratio, seed,
+        algo=algo, config_file=None, curve=curve,
+    )
 
 def run_single_with_config(exec_path: Path, hardblocks: str, nets: str, terminals: str,
                            floorplan_file: Path, ratio: float, seed: int,
                            algo: int = 0, config_file: Optional[str] = None,
                            curve: bool = False) -> Tuple[str, Dict[str, Optional[float]], int]:
     """
-    与 run_single 类似，但额外支持 --config 参数传入临时 JSON 配置文件。
+    运行n次实验，返回 (原始输出, 提取的指标字典, 返回码)，额外支持 --config 参数传入临时 JSON 配置文件。
     """
     cmd = [str(exec_path), "--algo", str(algo)]
     if config_file:
@@ -372,7 +309,7 @@ def write_statistics_to_log(log_file, table_data, algo, mode_desc="", extra_line
         lf.write(f"算法模式：{algo}\n")
         if found_count is not None:
             lf.write(f"可行解统计: found = {found_count}, not found = {not_found_count}\n")
-        lf.write(f"结束时间: {datetime.now().strftime('%c')}\n")
+        lf.write(f"结束时间: {datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}\n")
 
 
 def print_statistics_to_console(table_data, algo):
@@ -457,33 +394,6 @@ def compile_and_check(exec_path: Path, script_dir: Path, skip_make: bool) -> Non
         print(f"错误: 可执行文件不存在: {exec_path}", file=sys.stderr)
         sys.exit(1)
 
-
-def resolve_output_dir(script_dir: Path, args) -> Path:
-    """解析输出目录路径"""
-    if args.output_dir is None:
-        circuit = args.circuit or 'n10' #use args.circuit
-        num_blocks = circuit.lstrip('n')
-        ratio_str = str(args.white_space_ratio).replace('.', '_')
-        output_dir = (script_dir / f"./output/test_{num_blocks}blocks_ratio_"
-                      f"{ratio_str}_total_{args.num_runs}_algo{args.algo}")
-    else:
-        output_dir = Path(args.output_dir)
-    output_dir = output_dir.resolve()
-    ensure_dir(output_dir)
-    return output_dir
-
-
-def resolve_log_file(script_dir: Path, args, timestamp: str) -> Path:
-    """解析日志文件路径"""
-    if args.log_file is None:
-        log_file = script_dir / f"./log/running_results_algo{args.algo}_{timestamp}.txt"
-    else:
-        log_file = Path(args.log_file)
-    log_file = log_file.resolve()
-    ensure_dir(log_file.parent)
-    return log_file
-
-
 def write_log_header(log_file: Path, hardblocks: str, nets: str, terminals: str,
                      ratio: float, num_runs: int) -> None:
     """写入实验头部信息到日志文件"""
@@ -495,9 +405,78 @@ def write_log_header(log_file: Path, hardblocks: str, nets: str, terminals: str,
         lf.write(f"Terminals:  {terminals}\n")
         lf.write(f"Ratio:      {ratio}\n")
         lf.write(f"Runs:       {num_runs}\n")
-        lf.write(f"Start time: {datetime.now().strftime('%c')}\n")
+        lf.write(f"Start time: {datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}\n")
         lf.write("=" * 46 + "\n\n")
 
+def create_run_dirs(circuit: str, white_space_ratio: float,
+                    algo: int, num_runs: int) -> Tuple[Path, Path]:
+    """
+    创建统一日志目录结构，返回 (run_dir, log_file)。
+    
+    目录结构：
+        log/YYYY_MM_DD/HH-MM-SS_{circuit}_wsrXXX_a{algo}_tot{N}/
+            ├── run.log
+            ├── config.yaml
+            ├── output/
+            ├── figures/
+            ├── curves/
+            └── seeds/
+    """
+    now = datetime.now()
+    date_str = now.strftime("%Y_%m_%d")
+    time_str = now.strftime("%H-%M-%S")
+    wsr_str = f"{int(white_space_ratio * 100):03d}"       # 0.1 → 010
+
+    script_dir = get_script_dir()
+    log_root = script_dir / "log"
+    date_dir = log_root / date_str
+
+    run_name = f"{time_str}_{circuit}_wsr{wsr_str}_a{algo}_tot{num_runs}"
+    run_dir = date_dir / run_name
+
+    # 创建所有子目录
+    for sub in ["output", "figures", "curves", "seeds"]:
+        (run_dir / sub).mkdir(parents=True, exist_ok=True)
+
+    log_file = run_dir / "run.log"
+    return run_dir, log_file
+
+def update_latest_link(run_dir: Path) -> None:
+    """
+    在 log/ 下创建 latest 符号链接，指向最近一次运行的实例目录。
+    若符号链接不可用（如 Windows 无管理员权限），回退为 latest.txt。
+    """
+    log_root = run_dir.parent.parent          # run_dir = log/2026_08_09/xxx/, 上两级 = log/
+    latest_link = log_root / "latest"
+
+    # 删旧
+    if latest_link.is_symlink() or latest_link.exists():
+        latest_link.unlink()
+
+    try:
+        rel_path = run_dir.relative_to(log_root)
+        latest_link.symlink_to(str(rel_path), target_is_directory=True)
+    except OSError:
+        # 回退：写入 latest.txt
+        latest_txt = log_root / "latest.txt"
+        latest_txt.write_text(str(run_dir.relative_to(log_root)), encoding="utf-8")
+        print(f"注意: 无法创建符号链接，已回退为 {latest_txt}")
+
+def write_config_yaml(run_dir: Path, args: Namespace) -> None:
+    """将本次运行的关键参数写入 config.yaml，便于复现。"""
+    config_path = run_dir / "config.yaml"
+    content = {
+        "circuit": args.circuit,
+        "white_space_ratio": args.white_space_ratio,
+        "algo": args.algo,
+        "num_runs": args.num_runs,
+        "executable": args.executable,
+        "skip_make": args.skip_make,
+        "record_curve": args.record_curve,
+        "timestamp": datetime.now().strftime('%Y-%m-%d_%H-%M-%S'),
+    }
+    with open(config_path, "w") as f:
+        yaml.dump(content, f, default_flow_style=False, allow_unicode=True)
 
 def resolve_common_paths(script_dir: Path, args) -> Tuple[Path, str, str, str]:
     """解析可执行文件和测试文件路径(exec, hardblocks, nets, terminals)"""
@@ -509,12 +488,19 @@ def resolve_common_paths(script_dir: Path, args) -> Tuple[Path, str, str, str]:
     terminals = str((script_dir / f'./testcase/{circuit}.pl').resolve())
     return exec_path, hardblocks, nets, terminals
 
+def _make_metric_row(run_idx, seed, metrics):
+    """从单次运行指标构造统计表格的一行。"""
+    return [
+        run_idx, seed,
+        metrics.get("Width"), metrics.get("Height"),
+        metrics.get("Area"), metrics.get("Wirelength"),
+        metrics.get("R"), metrics.get("Cost"),
+        metrics.get("BTree_T_us"), metrics.get("SA_T_s"),
+        metrics.get("Feasible"),
+    ]
+
 def run_tuning(args):
     """参数调优主逻辑"""
-    if yaml is None:
-        print("错误: 需要安装 PyYAML。请运行: pip install pyyaml", file=sys.stderr)
-        sys.exit(1)
-
     # ========== 1. 加载 YAML ==========
     tune_path = Path(args.tune)
     if not tune_path.exists():
@@ -541,10 +527,10 @@ def run_tuning(args):
     else:
         param_name = raw_param
 
-    # 曲线模式强制约束
-    if args.record_curve:
-        print("曲线调优模式: 强制 num_runs=1, 限制最多 10 个参数值")
-        num_runs_per_value = 1
+    # 曲线模式：num_runs_per_value 上限保护（>5 时警告并截断到 5；≤5 则维持 YAML 值）
+    if args.record_curve and num_runs_per_value > 5:
+        print(f"[警告] 曲线调优模式: num_runs_per_value={num_runs_per_value} 超过上限 5，已限制为 5")
+        num_runs_per_value = 5
 
     # ========== 2. 生成参数值列表 ==========
     num_steps = int(round((end - start) / step)) + 1
@@ -561,37 +547,46 @@ def run_tuning(args):
 
     # ========== 3. 准备路径 ==========
     script_dir = get_script_dir()
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
+    timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     algo_tag = f"_algo{algo}"
-    ratio_str = str(args.white_space_ratio).replace('.', '_')
 
     exec_path, hardblocks, nets, terminals = resolve_common_paths(script_dir, args)
     compile_and_check(exec_path, script_dir, args.skip_make)
 
-    # --- 目录结构 ---
-    # ./log/tune_algo0_r_2026-06-08_16:21:22/
-    #     param_r0.5/
-    #         running_results_algo0_r0.5.txt   (含完整统计)
-    #     param_r0.55/
-    #         running_results_algo0_r0.55.txt
-    #     summary.txt                          (整体汇总)
-    tune_log_root = script_dir / f"./log/tune{algo_tag}_{param_name}_{timestamp}"
+    # --- 目录结构：log/YYYY_MM_DD/HH-MM-SS_tune_a{algo}_{param}_{start}-{end}/ ---
+    #     param_{value}/
+    #         running_results_algo{...}.txt     (含完整统计)
+    #     output/                               (val{pv}_run{r}.floorplan)
+    #     curves/                               (param_{value}/curve_data.csv)
+    #     figures/                              (曲线图)
+    #     seeds/                                (种子快照)
+    #     summary.txt                           (整体汇总)
+    now = datetime.now()
+    date_str = now.strftime("%Y_%m_%d")
+    time_str = now.strftime("%H-%M-%S")
+    tune_name = f"{time_str}_tune_a{algo}_{param_name}_{start}-{end}"
+    tune_log_root = script_dir / "log" / date_str / tune_name
     ensure_dir(tune_log_root)
 
-    output_dir = script_dir / f"./output/tune{algo_tag}_{param_name}_{timestamp}"
+    # 日志目录：tune_log/param_*/run{idx}.log + statistics.txt
+    tune_log = tune_log_root / "tune_log"
+    ensure_dir(tune_log)
+
+    output_dir = tune_log_root / "output"
     ensure_dir(output_dir)
+
+    figure_root = tune_log_root / "figures"
+    ensure_dir(figure_root)
+
+    seeds_root = tune_log_root / "seeds"
+    ensure_dir(seeds_root)
 
     config_dir = script_dir / "./config"
     ensure_dir(config_dir)
 
     if args.record_curve:
-        curve_root = (script_dir / "results" / "curve_results"
-                      / f"tune{algo_tag}_{param_name}_{timestamp}")
+        curve_root = tune_log_root / "curves"
         ensure_dir(curve_root)
-
-    # ========== 4. 生成种子 ==========
-    seeds = load_or_generate_seeds(num_runs_per_value, args.seed_file,
-                                   script_dir, algo_tag, timestamp)
 
     # ========== 5. 打印概要 ==========
     print(f"\n{'='*70}")
@@ -609,15 +604,29 @@ def run_tuning(args):
     # ========== 6. 调优主循环 ==========
     for pv_idx, param_val in enumerate(param_values, start=1):
         val_str = str(param_val).replace('.', '_')
-        folder_name = f"param_{param_name}{val_str}"
-        param_log_dir = tune_log_root / folder_name
+        param_tag = f"{param_name}{val_str}"          # 如 "r0_8"
+        folder_name = f"param_{param_tag}"            # 如 "param_r0_8"
+        param_log_dir = tune_log / folder_name
         ensure_dir(param_log_dir)
 
-        log_file = param_log_dir / f"running_results{algo_tag}_{param_name}{val_str}.txt"
-        curve_csv_path = None
-        if args.record_curve:
-            curve_csv_path = curve_root / folder_name / "curve_data.csv"
-            ensure_dir(curve_csv_path.parent)
+        # 本参数聚合 log：tune_log/param_*/run.log（同一参数仅种子不同，合并为一个 log，类似单次 run.log）
+        run_log_file = param_log_dir / "run.log"
+        write_log_header(run_log_file, hardblocks, nets, terminals,
+                         args.white_space_ratio, num_runs_per_value)
+
+        # 本参数的输出目录与种子目录（按参数值分类）
+        output_param_dir = output_dir / folder_name
+        ensure_dir(output_param_dir)
+        seeds_param_dir = seeds_root / folder_name
+        ensure_dir(seeds_param_dir)
+
+        # 每个参数值使用独立的种子集，保存到 seeds/param_*/
+        seeds = load_or_generate_seeds(num_runs_per_value, args.seed_file,
+                                       script_dir, algo_tag, timestamp)
+        seed_snapshot = seeds_param_dir / f"seeds_{num_runs_per_value}{algo_tag}_{timestamp}.txt"
+        with open(seed_snapshot, "w") as sf:
+            for s in seeds:
+                sf.write(f"{s}\n")
 
         param_table_data = []
         param_mode_desc = f"调优 {block_name}.{param_name}={param_val}"
@@ -631,7 +640,7 @@ def run_tuning(args):
             json.dump(config_dict, f, indent=2)
 
         for run_idx, seed in enumerate(seeds, start=1):
-            floorplan_file = output_dir / f"val{pv_idx}_run{run_idx}.floorplan"
+            floorplan_file = output_param_dir / f"run{run_idx}.floorplan"
 
             if args.record_curve:
                 print(f"  运行 {run_idx}/{num_runs_per_value} (seed={seed}, 曲线)...", end=" ")
@@ -640,7 +649,7 @@ def run_tuning(args):
                     floorplan_file, args.white_space_ratio, seed,
                     algo=algo, config_file=str(config_json_path), curve=True
                 )
-                # 过滤 CSV 行写入曲线文件
+                # 过滤 CSV 行：曲线写入 curves/param_*/run{idx}_curve_data.csv，log 移除 CSV 行
                 curve_lines = []
                 clean_lines = []
                 for line in output_text.splitlines(True):
@@ -648,11 +657,14 @@ def run_tuning(args):
                         curve_lines.append(line[4:].lstrip())
                     else:
                         clean_lines.append(line)
+                curve_csv_path = curve_root / folder_name / f"run{run_idx}_curve_data.csv"
+                ensure_dir(curve_csv_path.parent)   # 确保 curves/param_*/ 目录存在
                 with open(curve_csv_path, 'w') as cf:
                     cf.write("width,height,area,wirelength,R,cost,Total_Moves,"
                              "T_Moves,T_uphill,T_reject,T\n")
                     cf.writelines(curve_lines)
-                metrics = parse_output(''.join(clean_lines))
+                log_output_text = ''.join(clean_lines)   # log 不含 CSV 行
+                metrics = parse_output(log_output_text)
             else:
                 print(f"  运行 {run_idx}/{num_runs_per_value} (seed={seed})...", end=" ")
                 output_text, metrics, retcode = run_single_with_config(
@@ -660,33 +672,27 @@ def run_tuning(args):
                     floorplan_file, args.white_space_ratio, seed,
                     algo=algo, config_file=str(config_json_path), curve=False
                 )
+                log_output_text = output_text
 
-            # 写原始日志
-            with open(log_file, "a") as lf:
+            # 追加当前 run 的输出到本参数 run.log（不含 CSV 行）
+            with open(run_log_file, "a") as lf:
                 lf.write("=" * 60 + "\n")
-                lf.write(f"Run {run_idx}/{num_runs_per_value} (seed={seed})\n")
+                lf.write(f" Run {run_idx} / {num_runs_per_value}  (seed = {seed})\n")
                 lf.write("=" * 60 + "\n")
-                lf.write(output_text)
+                lf.write(log_output_text)
                 if retcode != 0:
-                    lf.write(f"[警告] 返回码: {retcode}\n")
+                    lf.write(f"\n[警告] 返回码: {retcode}\n")
                 lf.write("\n")
 
-            row = [
-                run_idx, seed,
-                metrics.get("Width"), metrics.get("Height"),
-                metrics.get("Area"), metrics.get("Wirelength"),
-                metrics.get("R"), metrics.get("Cost"),
-                metrics.get("BTree_T_us"), metrics.get("SA_T_s"),
-                metrics.get("Feasible")
-            ]
+            row = _make_metric_row(run_idx, seed, metrics)
             param_table_data.append(row)
 
             cost_str = f"{metrics.get('Cost', 'N/A')}"
             feas_str = "✓" if metrics.get("Feasible") else "✗"
             print(f"Cost={cost_str} {feas_str}")
 
-        # --- 写当前参数值的统计结果到各自的 log 文件 ---
-        write_statistics_to_log(log_file, param_table_data, algo,
+        # --- 写当前参数值的统计结果（追加到本参数 run.log 末尾，类似批量模式） ---
+        write_statistics_to_log(run_log_file, param_table_data, algo,
                                 mode_desc=param_mode_desc)
 
         # 保存汇总信息
@@ -695,7 +701,6 @@ def run_tuning(args):
         feas_rate = (found_cnt / num_runs_per_value * 100) if found_cnt is not None else 0
         all_summary[param_val] = {"mean_cost": cost_mean, "feas_rate": feas_rate}
 
-        # 改后
         cost_str = f"{cost_mean:.4f}" if cost_mean is not None else "N/A"
         print(f"  → 平均 Cost={cost_str}, 可行解率={feas_rate:.0f}%")
 
@@ -726,17 +731,72 @@ def run_tuning(args):
             sf.write(line + "\n")
 
     # ========== 8. 清理临时 JSON 配置文件 ==========
-    import glob
-    for f in glob.glob(str(config_dir / f"tune_*.json")):
+    for f in config_dir.glob("tune_*.json"):
         try:
-            os.unlink(f)
+            f.unlink()
         except OSError:
             pass
     print(f"已清理临时配置文件 ({config_dir}/)")
 
+    # ===== 更新 latest 链接 =====
+    update_latest_link(tune_log_root)
+
+    # ===== 可选：绘制 floorplan / B*-tree（调优模式）=====
+    if args.draw_fp:
+        draw_fp = _load_scripts_module("draw_fixed_outline")
+        tune_fp_args = Namespace(
+            tune=str(tune_log_root),               # 调优运行目录
+            output=str(figure_root),               # 图片输出到 tune_dir/figures/
+            dpi=args.fp_dpi,
+            algo=algo,
+            max_read=None,
+            blocks=int(args.circuit.lstrip('n')),  # 备用块数（通常由 floorplan 推断）
+        )
+        draw_fp.main(tune_fp_args)
+
     print(f"\n详细日志: {tune_log_root}/")
     print(f"汇总文件: {summary_file}")
     print("调优完成。")
+
+# ---------- 参数解析 ----------
+def parse_args():
+    parser = argparse.ArgumentParser(description="批量运行 hw3_dbg 并收集结果")
+    parser.add_argument("--executable", type=str, default="./bin/hw3_dbg",
+                        help="可执行文件路径（相对于脚本位置）")
+    parser.add_argument("--circuit", type=str, default="n10", choices=['n10', 'n30', 'n50', 'n100', 'n200', 'n300'],
+                        help="auto-load ./testcase/<circuit>.hardblocks(.nets/.pl)")
+    parser.add_argument("--white_space_ratio", type=float, default=0.1,
+                        help="空白比例")
+    parser.add_argument("--num_runs", type=int, default=20,
+                        help="运行次数")
+    parser.add_argument("--output_dir", type=str, default=None,
+                        help="floorplan 输出目录（自动生成前缀）")
+    parser.add_argument("--log_file", type=str, default=None,
+                        help="完整日志文件路径（原始输出）")
+    parser.add_argument("--seed_file", type=str, default=None,
+                        help="种子文件路径")
+    parser.add_argument("--skip_make", action="store_true",
+                        help="跳过 make 编译步骤")
+    parser.add_argument("--record_curve", action="store_true",
+                        help="记录模拟退火过程中的详细参数曲线")
+    parser.add_argument("-a","--algo", type=int, default=0,
+                        help="算法模式: 0=原始算法, 1=GMS, 2=... (默认0)")
+    parser.add_argument("--tune", type=str, default=None,
+                        help="调优配置文件（YAML），对某个参数进行网格搜索。例如: --tune tune_config.yaml")
+
+    # plot and draw
+    parser.add_argument("--draw_fp", action="store_true",
+                    help="批量实验完成后自动绘制 floorplan 与 B*-tree 图（调用 scripts/draw_fixed_outline.py）")
+    parser.add_argument("--draw_curve", action="store_true",
+                        help="曲线记录完成后自动绘制模拟退火曲线（调用 scripts/draw_curve.py，需 --record_curve）")
+    parser.add_argument("--draw_nets", action="store_true",
+                        help="绘制 floorplan 时叠加网表连线（需配合 --draw_fp）")
+    parser.add_argument("--max_nets_draw", type=int, default=None,
+                        help="绘制网表的最大数量（需配合 --draw_nets）")
+    parser.add_argument("--fp_dpi", type=int, default=120,
+                        help="floorplan 图片分辨率（默认120）")
+    
+    return parser.parse_args()
 
 # ---------- 主函数 ----------
 def main():
@@ -749,39 +809,47 @@ def main():
     # ==========================
     
     script_dir = get_script_dir()
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H:%M:%S")    #时间戳
+    timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')    #时间戳
     algo_tag = f"_algo{args.algo}"                              #算法标识
-
-    if args.record_curve:
-        print(f"曲线模式运行已开启，请注意剩余存储容量！")
-        if (args.num_runs > 10):
-            args.num_runs = 10  #设置运行次数上限
         
+    # ===== 第一步：创建统一日志目录结构 =====
+    run_dir, log_file = create_run_dirs(args.circuit, args.white_space_ratio,
+                                        args.algo, args.num_runs)
+    write_config_yaml(run_dir, args)
+
+    # output/log: auto-generate in run_dir by default; or explictly specify a directory
+    if args.output_dir:
+        output_dir = Path(args.output_dir).resolve()
+        ensure_dir(output_dir)
+    else:
+        output_dir = run_dir / "output"       
+    
+    if args.log_file:
+        log_file = Path(args.log_file).resolve()
+        ensure_dir(log_file.parent)
+            
+    curve_dir  = run_dir / "curves"       
+    figure_dir = run_dir / "figures"      
+    
+    print(f"运行目录: {run_dir}")
 
     # 补全默认路径（相对于脚本目录）
     exec_path, hardblocks, nets, terminals = resolve_common_paths(script_dir, args)
 
-    # 输出目录
-    output_dir = resolve_output_dir(script_dir, args)
-
-    # 日志文件（原始输出）
-    log_file = resolve_log_file(script_dir, args, timestamp)
-
-    # # 结果 CSV 文件
-    # if args.results_csv is None:
-    #     results_csv = script_dir / f"./results/n_runs_result/results_{args.num_runs}{algo_tag}_{timestamp}.csv"
-    # else:
-    #     results_csv = Path(args.results_csv)
-    # results_csv = results_csv.resolve()
-    # ensure_dir(results_csv.parent)
-
     # 编译
     compile_and_check(exec_path, script_dir, args.skip_make)
 
-    # 生成种子
-    # 生成或读取种子列表
-    seeds = load_or_generate_seeds(args.num_runs, args.seed_file, script_dir, algo_tag, timestamp)
-
+    if args.record_curve and args.num_runs > 10:
+            args.num_runs = 10
+    # ===== 种子 =====
+    seeds = load_or_generate_seeds(args.num_runs, args.seed_file,
+                                script_dir, algo_tag, timestamp)
+    # 种子快照写入 run_dir/seeds/
+    seed_snapshot = run_dir / "seeds" / f"seeds_{args.num_runs}{algo_tag}_{timestamp}.txt"
+    with open(seed_snapshot, "w") as sf:
+        for s in seeds:
+            sf.write(f"{s}\n")
+            
     # 准备日志文件（写入头部）
     write_log_header(log_file, hardblocks, nets, terminals, args.white_space_ratio, args.num_runs)
 
@@ -789,21 +857,19 @@ def main():
     table_data = []   # 每个元素为 (run, seed, width, height, area, wirelength, R, cost)
 
     print(f"开始批量测试，日志保存到 {log_file}")
-    # print(f"结果表格将保存到 {results_csv}")
 
     # 批量运行（原逻辑）
     if args.record_curve:
         # 曲线模式：可运行多次，使用特殊处理函数
         print("\n曲线记录模式已开启，将运行多次实验并分别保存曲线数据。\n")
 
-        # 曲线结果目录，不存在就创建
-        curve_results_dir = script_dir / "results" / "curve_results" / f"curve_data{algo_tag}_{timestamp}{algo_tag}"
-        ensure_dir(curve_results_dir)
-        
+        # 曲线结果目录：run_dir/curves/
+        curve_dir.mkdir(parents=True, exist_ok=True)
+
         for run_idx, seed in enumerate(seeds, start=1):
             floorplan_file = output_dir / f"run{run_idx}_{timestamp}.floorplan"
-            # 生成曲线 CSV 文件路径（默认放在 output_dir 下，也可自定义）
-            curve_csv_path = curve_results_dir / f"curve_data_run{run_idx}{algo_tag}.csv"
+            # 生成曲线 CSV 文件路径（run_dir/curves/）
+            curve_csv_path = curve_dir / f"curve_data_run{run_idx}{algo_tag}.csv"
             print(f"[{run_idx}/{args.num_runs}] 运行中 (曲线记录)...")
             output_text, metrics, retcode = run_with_curve_logging(
                 exec_path, hardblocks, nets, terminals,
@@ -813,18 +879,7 @@ def main():
             )
             # 仍然可以收集最终指标到 table_data，以便统计（可选）
             # 提取指标存入表格
-            row = [
-                run_idx, seed,
-                metrics.get("Width"),
-                metrics.get("Height"),
-                metrics.get("Area"),
-                metrics.get("Wirelength"),
-                metrics.get("R"),
-                metrics.get("Cost"),
-                metrics.get("BTree_T_us"),
-                metrics.get("SA_T_s"),
-                metrics.get("Feasible"),   # 添加可行解标记
-            ]
+            row = _make_metric_row(run_idx, seed, metrics)
             table_data.append(row)
             
             # 终端显示进度
@@ -835,7 +890,7 @@ def main():
             with open(log_file, "a") as lf:
                 lf.write(f"\n{'Run: ':<12}{run_idx}")
                 lf.write(f"\n{'曲线数据已保存至: ':<12}{curve_csv_path}")
-                lf.write(f"\n结束时间: {datetime.now().strftime('%c')}\n")
+                lf.write(f"\n结束时间: {datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}\n")
                 lf.write("=" * 46 + "\n\n")
 
     else:
@@ -862,39 +917,19 @@ def main():
                 lf.write("\n")
 
             # 提取指标存入表格
-            row = [
-                run_idx, seed,
-                metrics.get("Width"),
-                metrics.get("Height"),
-                metrics.get("Area"),
-                metrics.get("Wirelength"),
-                metrics.get("R"),
-                metrics.get("Cost"),
-                metrics.get("BTree_T_us"),
-                metrics.get("SA_T_s"),
-                metrics.get("Feasible"),   # 添加可行解标记
-            ]
+            row = _make_metric_row(run_idx, seed, metrics)
             table_data.append(row)
 
             # 终端显示进度
             print(f"[{run_idx}/{args.num_runs}] seed={seed} 完成 (返回码 {retcode})")
 
-    # # 写入 CSV 表格
-    # with open(results_csv, "w", newline="") as csvfile:
-    #     writer = csv.writer(csvfile)
-    #     writer.writerow([
-    #         "run", "seed", "Width", "Height", "Area", "Wirelength", "R", "Cost",
-    #         "BTree_T_us", "SA_T_s", "Feasible"
-    #     ])
-    #     for row in table_data:
-    #         writer.writerow(row)
-
-    # print(f"\n结果表格已保存到 {results_csv}")
-    
     # ---- 统计输出 ----
     print_statistics_to_console(table_data, args.algo)
     write_statistics_to_log(log_file, table_data, args.algo,
                             mode_desc="曲线模式" if args.record_curve else "批量实验模式")
+
+    # ===== 更新 latest 链接 =====
+    update_latest_link(run_dir)
 
     # ---- 可选：自动绘制 floorplan / B*-tree 图 ----
     if args.draw_fp:
@@ -907,7 +942,7 @@ def main():
             max_read=None,
             floorplan=None,
             btree=None,
-            output=None,
+            output=str(figure_dir),                # 图片输出到 run_dir/figures/
             dpi=args.fp_dpi,
             no_labels=False,
             draw_nets=args.draw_nets,
@@ -922,11 +957,9 @@ def main():
             print("提示: --draw_curve 仅在 --record_curve 模式下生效，跳过")
         else:
             draw_curve = _load_scripts_module("draw_curve")
-            curve_dir = (script_dir / "results" / "curve_results"
-                         / f"curve_data{algo_tag}_{timestamp}{algo_tag}")
             curve_args = Namespace(
-                csv=str(curve_dir),      # 指向本次实验的曲线 CSV 目录
-                output_dir=None,         # 默认输出到 results/curve_figures/
+                csv=str(curve_dir),              # run_dir/curves/
+                output_dir=str(figure_dir),      # run_dir/figures/
                 sample_step=100,
                 rejection_rate=None,
                 rr_n_top=60,

@@ -29,9 +29,9 @@ def find_latest_csv(results_dir: Path) -> Path:
     def extract_timestamp(path: Path) -> datetime:
         name = path.stem
         # 文件名格式: results_50_algo0_2026-06-07_17:04:29
-        m = re.search(r"(\d{4}-\d{2}-\d{2}_\d{2}:\d{2}:\d{2})", name)
+        m = re.search(r"(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})", name)
         if m:
-            return datetime.strptime(m.group(1), "%Y-%m-%d_%H:%M:%S")
+            return datetime.strptime(m.group(1), "%Y-%m-%d_%H-%M-%S")
         return datetime.fromtimestamp(path.stat().st_mtime)
 
     latest = max(csv_files, key=extract_timestamp)

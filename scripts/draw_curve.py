@@ -18,7 +18,7 @@ import numpy as np
 from matplotlib.collections import LineCollection
 
 
-DPI = 400   #全局图像DPI
+DPI = 120   #全局图像DPI
 
 # 设置中文字体（避免中文标签乱码，可选）
 plt.rcParams['font.sans-serif'] = ['SimHei', 'DejaVu Sans']  # 或 'WenQuanYi Zen Hei'
@@ -34,9 +34,9 @@ def find_latest_csv_dir(results_dir: Path) -> Path:
         # 兼容旧格式: curve_data_2026-06-04_12:48:28
         # 兼容新格式: curve_data_algo0_2026-06-06_20:48:33_algo0
         name = path.name
-        m = re.search(r"(\d{4}-\d{2}-\d{2}_\d{2}:\d{2}:\d{2})", name)
+        m = re.search(r"(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})", name)
         if m:
-            return datetime.strptime(m.group(1), "%Y-%m-%d_%H:%M:%S")
+            return datetime.strptime(m.group(1), "%Y-%m-%d_%H-%M-%S")
         return datetime.fromtimestamp(path.stat().st_mtime)
     latest = max(subdirs, key=extract_timestamp)
     return latest
@@ -59,19 +59,28 @@ def find_latest_csv(results_dir: Path) -> Path:
     latest = max(csv_files, key=extract_timestamp)
     return latest
 
-def find_latest_tune_dir(results_dir: Path) -> Path:
-    """扫描 curve_results 目录，找到最新的 tune_* 子文件夹"""
-    subdirs = [d for d in results_dir.iterdir() if d.is_dir() and d.name.startswith("tune_")]
-    if not subdirs:
-        raise FileNotFoundError(f"在 {results_dir} 中未找到任何 tune_* 子文件夹")
+def find_latest_tune_dir(log_dir: Path) -> Path:
+    """
+    查找最新的调优运行目录（仅新结构）。
+    在 log/YYYY_MM_DD/ 下找 HH-MM-SS_tune_* 运行目录。
+    """
     def extract_timestamp(path: Path) -> datetime:
         name = path.name
-        m = re.search(r"(\d{4}-\d{2}-\d{2}_\d{2}:\d{2}:\d{2})", name)
+        # 新结构: HH-MM-SS_tune_... （日期在父目录名 YYYY_MM_DD 里）
+        m = re.match(r"^(\d{2})-(\d{2})-(\d{2})_tune_", name)
         if m:
-            return datetime.strptime(m.group(1), "%Y-%m-%d_%H:%M:%S")
+            dm = re.match(r"(\d{4})_(\d{2})_(\d{2})", path.parent.name)
+            if dm:
+                return datetime(int(dm.group(1)), int(dm.group(2)), int(dm.group(3)),
+                                int(m.group(1)), int(m.group(2)), int(m.group(3)))
         return datetime.fromtimestamp(path.stat().st_mtime)
-    latest = max(subdirs, key=extract_timestamp)
-    return latest
+
+    if log_dir is None or not log_dir.is_dir():
+        raise FileNotFoundError(f"日志目录不存在: {log_dir}")
+    candidates = sorted(d for d in log_dir.rglob("*_tune_*") if d.is_dir())
+    if not candidates:
+        raise FileNotFoundError(f"在 {log_dir} 中未找到任何 *_tune_* 调优运行目录")
+    return max(candidates, key=extract_timestamp)
 
 def process_single_csv(csv_path, output_dir, suffix, sample_step=100, algo=0,
                        n_top=0, n_back=0):
@@ -397,11 +406,12 @@ def main(args=None):
 
     script_dir = Path(__file__).resolve().parent
     results_curve_root = script_dir / "../results/curve_results"
+    log_dir = script_dir / "../log"   # 新结构：调优目录在 log/YYYY_MM_DD/HH-MM-SS_tune_*
 
     # ----- 调优模式（tune）-----
     if args.tune is not None:
         if args.tune == 'auto':
-            tune_dir = find_latest_tune_dir(results_curve_root)
+            tune_dir = find_latest_tune_dir(log_dir)
         else:
             tune_dir = Path(args.tune)
             if not tune_dir.is_dir():
@@ -409,11 +419,12 @@ def main(args=None):
 
         print(f"调优模式: 读取 {tune_dir}")
 
-        csv_files_tune = sorted(tune_dir.glob("param_*/curve_data.csv"))
+        csv_files_tune = sorted(tune_dir.glob("curves/param_*/run*_curve_data.csv"))
         if not csv_files_tune:
-            raise FileNotFoundError(f"在 {tune_dir} 中未找到任何 param_*/curve_data.csv 文件")
+            raise FileNotFoundError(
+                f"在 {tune_dir} 中未找到曲线 CSV（curves/param_*/run*_curve_data.csv）")
 
-        print(f"找到 {len(csv_files_tune)} 个参数 CSV 文件")
+        print(f"找到 {len(csv_files_tune)} 个曲线 CSV 文件")
 
         if args.output_dir:
             tune_output = Path(args.output_dir)
@@ -422,14 +433,15 @@ def main(args=None):
         tune_output.mkdir(parents=True, exist_ok=True)
 
         for csv_path in csv_files_tune:
-            param_name = csv_path.parent.name  # e.g. "param_stagnation_limit100"
-            output_subdir = tune_output / param_name
+            param_folder = csv_path.parent.name   # e.g. "param_r0_8"
+            run_stem = csv_path.stem              # e.g. "run1_curve_data"
+            output_subdir = tune_output / param_folder / run_stem
             output_subdir.mkdir(parents=True, exist_ok=True)
 
             algo_match = re.search(r'algo(\d+)', tune_dir.name)
             algo = int(algo_match.group(1)) if algo_match else 0
 
-            process_single_csv(csv_path, output_subdir, suffix=param_name,
+            process_single_csv(csv_path, output_subdir, suffix=run_stem,
                                sample_step=args.sample_step, algo=algo,
                                n_top=args.n_top, n_back=args.n_back)
 

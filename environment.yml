@@ -34,4 +34,4 @@ dependencies:
   - xorg-xorgproto=2024.1=h5eee18b_1
   - xz=5.8.2=h448239c_0
   - xorg-libxau=1.0.12=h9b100fa_0
-# prefix: /data2/user23006/miniconda3/envs/SA_Btree you don't need a prefix, because different system has different env
+prefix: /data2/user23006/miniconda3/envs/SA_Btree
