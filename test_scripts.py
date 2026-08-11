@@ -39,11 +39,16 @@ def ensure_dir(path: Path) -> None:
     """确保目录存在"""
     path.mkdir(parents=True, exist_ok=True)
 
-def run_make(script_dir: Path) -> None:
+def run_make(script_dir: Path, curve_mode: bool = False) -> None:
     """执行 make -f Makefile.debug"""
     print("正在编译...")
     try:
-        subprocess.run(["make", "-f", "Makefile.debug"], cwd=script_dir, check=True)
+        CURVE_MODE = 1 if curve_mode else 0
+        subprocess.run(
+            ["make", "-f", "Makefile.debug", f"CURVE_MODE={CURVE_MODE}"],
+            cwd=script_dir,
+            check=True,
+        )
         print("编译完成。")
     except subprocess.CalledProcessError as e:
         print(f"编译失败: {e}", file=sys.stderr)
@@ -157,21 +162,19 @@ def run_single(exec_path: Path, hardblocks: str, nets: str, terminals: str,
     return run_single_with_config(
         exec_path, hardblocks, nets, terminals,
         floorplan_file, ratio, seed,
-        algo=algo, config_file=None, curve=curve,
+        algo=algo, config_file=None,
     )
 
 def run_single_with_config(exec_path: Path, hardblocks: str, nets: str, terminals: str,
                            floorplan_file: Path, ratio: float, seed: int,
-                           algo: int = 0, config_file: Optional[str] = None,
-                           curve: bool = False) -> Tuple[str, Dict[str, Optional[float]], int]:
+                           algo: int = 0, config_file: Optional[str] = None
+                           ) -> Tuple[str, Dict[str, Optional[float]], int]:
     """
     运行n次实验，返回 (原始输出, 提取的指标字典, 返回码)，额外支持 --config 参数传入临时 JSON 配置文件。
     """
     cmd = [str(exec_path), "--algo", str(algo)]
     if config_file:
         cmd.extend(["--config", config_file])
-    if curve:
-        cmd.append("--curve")
     cmd.extend([hardblocks, nets, terminals, str(floorplan_file), str(ratio), str(seed)])
 
     try:
@@ -184,17 +187,14 @@ def run_single_with_config(exec_path: Path, hardblocks: str, nets: str, terminal
         return error_output, {}, -1
 
 def run_with_curve_logging(exec_path, hardblocks, nets, terminals, floorplan_file,
-                           ratio, seed, curve_csv_path, log_file_path, algo=0, curve:bool = False):
+                           ratio, seed, curve_csv_path, log_file_path, algo=0,):
     """
-    要求 C++ 程序支持 --curve 选项。
     运行n次实验，实时过滤输出：
     - 以 'CSV:' 开头的行：去掉前缀后写入 curve_csv_path
     - 其他行：追加到 log_file_path，并收集到 full_output 用于最终解析
     返回 (full_output, metrics, returncode)
     """
     cmd = [str(exec_path), "--algo", str(algo)]
-    if curve:
-        cmd.append("--curve")
     cmd.extend([hardblocks, nets, terminals, str(floorplan_file), str(ratio), str(seed)])
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             text=True, bufsize=1)  # 行缓冲
@@ -382,14 +382,14 @@ def load_or_generate_seeds(num_runs: int, seed_file_arg: Optional[str],
 
 # ========== 编译与路径管理 ==========
 
-def compile_and_check(exec_path: Path, script_dir: Path, skip_make: bool) -> None:
+def compile_and_check(exec_path: Path, script_dir: Path, skip_make: bool, curve_mode: bool = False) -> None:
     """编译（如需）并检查可执行文件是否存在"""
     if not skip_make:
         cpp_src_dir = script_dir / "cpp_src"
         if not cpp_src_dir.exists():
             print(f"错误: cpp_src 目录不存在: {cpp_src_dir}", file=sys.stderr)
             sys.exit(1)
-        run_make(cpp_src_dir)
+        run_make(cpp_src_dir, curve_mode=curve_mode)
     if not exec_path.exists():
         print(f"错误: 可执行文件不存在: {exec_path}", file=sys.stderr)
         sys.exit(1)
@@ -409,12 +409,13 @@ def write_log_header(log_file: Path, hardblocks: str, nets: str, terminals: str,
         lf.write("=" * 46 + "\n\n")
 
 def create_run_dirs(circuit: str, white_space_ratio: float,
-                    algo: int, num_runs: int) -> Tuple[Path, Path]:
+                    algo: int, num_runs: int,
+                    draw_fp: bool = False, draw_curve: bool = False) -> Tuple[Path, Path]:
     """
     创建统一日志目录结构，返回 (run_dir, log_file)。
     
     目录结构：
-        log/YYYY_MM_DD/HH-MM-SS_{circuit}_wsrXXX_a{algo}_tot{N}/
+        log/YYYY_MM_DD/HH-MM-SS_{circuit}_a{algo}_wsrXXX_tot{N}_fp_curve/
             ├── run.log
             ├── config.yaml
             ├── output/
@@ -427,11 +428,17 @@ def create_run_dirs(circuit: str, white_space_ratio: float,
     time_str = now.strftime("%H-%M-%S")
     wsr_str = f"{int(white_space_ratio * 100):03d}"       # 0.1 → 010
 
+    suffix = ""
+    if draw_fp:
+        suffix += "_fp"
+    if draw_curve:
+        suffix += "_curve"
+
     script_dir = get_script_dir()
     log_root = script_dir / "log"
     date_dir = log_root / date_str
 
-    run_name = f"{time_str}_{circuit}_wsr{wsr_str}_a{algo}_tot{num_runs}"
+    run_name = f"{time_str}_{circuit}_a{algo}_wsr{wsr_str}_tot{num_runs}{suffix}"
     run_dir = date_dir / run_name
 
     # 创建所有子目录
@@ -551,7 +558,7 @@ def run_tuning(args):
     algo_tag = f"_algo{algo}"
 
     exec_path, hardblocks, nets, terminals = resolve_common_paths(script_dir, args)
-    compile_and_check(exec_path, script_dir, args.skip_make)
+    compile_and_check(exec_path, script_dir, args.skip_make, curve_mode=(args.record_curve or args.draw_curve))
 
     # --- 目录结构：log/YYYY_MM_DD/HH-MM-SS_tune_a{algo}_{param}_{start}-{end}/ ---
     #     param_{value}/
@@ -647,7 +654,7 @@ def run_tuning(args):
                 output_text, metrics, retcode = run_single_with_config(
                     exec_path, hardblocks, nets, terminals,
                     floorplan_file, args.white_space_ratio, seed,
-                    algo=algo, config_file=str(config_json_path), curve=True
+                    algo=algo, config_file=str(config_json_path),
                 )
                 # 过滤 CSV 行：曲线写入 curves/param_*/run{idx}_curve_data.csv，log 移除 CSV 行
                 curve_lines = []
@@ -670,7 +677,7 @@ def run_tuning(args):
                 output_text, metrics, retcode = run_single_with_config(
                     exec_path, hardblocks, nets, terminals,
                     floorplan_file, args.white_space_ratio, seed,
-                    algo=algo, config_file=str(config_json_path), curve=False
+                    algo=algo, config_file=str(config_json_path),
                 )
                 log_output_text = output_text
 
@@ -801,20 +808,29 @@ def parse_args():
 # ---------- 主函数 ----------
 def main():
     args = parse_args()
-      
+    
+    # if draw_curve, set record_curve in True
+    if args.draw_curve:
+       args.record_curve = True
+    
     # ===== 新增：调优模式 =====
     if args.tune:
         run_tuning(args)
         return
     # ==========================
     
+    # ====== 非调优模式 =========
     script_dir = get_script_dir()
     timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')    #时间戳
     algo_tag = f"_algo{args.algo}"                              #算法标识
         
     # ===== 第一步：创建统一日志目录结构 =====
-    run_dir, log_file = create_run_dirs(args.circuit, args.white_space_ratio,
-                                        args.algo, args.num_runs)
+    run_dir, log_file = create_run_dirs(args.circuit,
+                                        args.white_space_ratio,
+                                        args.algo,
+                                        args.num_runs,
+                                        args.draw_fp,
+                                        args.draw_curve,)
     write_config_yaml(run_dir, args)
 
     # output/log: auto-generate in run_dir by default; or explictly specify a directory
@@ -837,10 +853,12 @@ def main():
     exec_path, hardblocks, nets, terminals = resolve_common_paths(script_dir, args)
 
     # 编译
-    compile_and_check(exec_path, script_dir, args.skip_make)
+    compile_and_check(exec_path, script_dir, args.skip_make, curve_mode=(args.record_curve or args.draw_curve))
 
+    # num_runs is capped in 10 in record_curve mode
     if args.record_curve and args.num_runs > 10:
             args.num_runs = 10
+    
     # ===== 种子 =====
     seeds = load_or_generate_seeds(args.num_runs, args.seed_file,
                                 script_dir, algo_tag, timestamp)
@@ -874,9 +892,7 @@ def main():
             output_text, metrics, retcode = run_with_curve_logging(
                 exec_path, hardblocks, nets, terminals,
                 floorplan_file, args.white_space_ratio, 
-                seed, curve_csv_path, log_file, algo=args.algo, 
-                curve=args.record_curve   # 新增
-            )
+                seed, curve_csv_path, log_file, algo=args.algo,)
             # 仍然可以收集最终指标到 table_data，以便统计（可选）
             # 提取指标存入表格
             row = _make_metric_row(run_idx, seed, metrics)
@@ -903,7 +919,7 @@ def main():
             output_text, metrics, retcode = run_single(
                 exec_path, hardblocks, nets, terminals,
                 floorplan_file, args.white_space_ratio, 
-                seed, algo=args.algo, curve=False   # 批量模式下不输出曲线
+                seed, algo=args.algo,   # 批量模式下不输出曲线
             )
 
             # 记录原始输出到日志
@@ -953,21 +969,18 @@ def main():
 
     # ---- 可选：自动绘制模拟退火曲线 ----
     if args.draw_curve:
-        if not args.record_curve:
-            print("提示: --draw_curve 仅在 --record_curve 模式下生效，跳过")
-        else:
-            draw_curve = _load_scripts_module("draw_curve")
-            curve_args = Namespace(
-                csv=str(curve_dir),              # run_dir/curves/
-                output_dir=str(figure_dir),      # run_dir/figures/
-                sample_step=100,
-                rejection_rate=None,
-                rr_n_top=60,
-                n_top=0,
-                n_back=0,
-                tune=None,
-            )
-            draw_curve.main(curve_args)
+        draw_curve = _load_scripts_module("draw_curve")
+        curve_args = Namespace(
+            csv=str(curve_dir),              # run_dir/curves/
+            output_dir=str(figure_dir),      # run_dir/figures/
+            sample_step=100,
+            rejection_rate=None,
+            rr_n_top=60,
+            n_top=0,
+            n_back=0,
+            tune=None,
+        )
+        draw_curve.main(curve_args)
 
     print(f"\n完整日志保存在: {log_file}")
     print("全部完成。")

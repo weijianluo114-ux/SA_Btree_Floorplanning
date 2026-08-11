@@ -12,19 +12,18 @@ GXX := g++
 # -Wall        : 开启几乎所有常规警告
 # -Wextra      : 开启额外警告（推荐调试时使用）
 # -DDEBUG      : 定义 DEBUG 宏，可在代码中用 #ifdef DEBUG 控制调试输出
-GXXFLAGS := -std=c++11 -g -Og -Wall -Wextra -DDEBUG
+CURVE_MODE ?= 0
+GXXFLAGS := -std=c++11 -g -Og -Wall -Wextra -DDEBUG -DCURVE_MODE=$(CURVE_MODE)
 
 # 输出目录
 BIN_DIR := ../bin
 
-# 源文件列表（多个源文件）
-SRC := fixed-outline_floorplanning.cpp utils.cpp GMS.cpp
+SRC := fixed-outline_floorplanning.cpp utils.cpp GMS.cpp	# 源文件列表（多个源文件）
+OBJ := $(addprefix $(BIN_DIR)/,$(SRC:.cpp=.o))	# 目标文件列表
+EXE := $(BIN_DIR)/hw3_dbg	# 可执行文件
 
-# 目标文件列表
-OBJ := $(addprefix $(BIN_DIR)/,$(SRC:.cpp=.o))
-
-# 可执行文件
-EXE := $(BIN_DIR)/hw3_dbg
+# 单一 stamp 文件，内容记录最近一次使用的 CURVE_MODE
+CURVE_STAMP := $(BIN_DIR)/.curve_mode
 
 # 默认目标
 .PHONY: all
@@ -32,14 +31,22 @@ all: $(BIN_DIR) $(EXE)
 
 # 先确保 bin 目录存在
 $(BIN_DIR):
-	mkdir -p $(BIN_DIR)
+	mkdir -p $@
 
 # 链接
 $(EXE): $(OBJ)
 	$(GXX) $(GXXFLAGS) -o $@ $^
 
+# 内容式 stamp：模式变化才更新 mtime，否则保持旧 mtime 避免无谓重编
+.PHONY: FORCE
+FORCE:
+
+$(CURVE_STAMP): FORCE | $(BIN_DIR)
+	@printf '%s\n' '$(CURVE_MODE)' > $@.tmp
+	@if cmp -s $@ $@.tmp; then rm -f $@.tmp; else mv -f $@.tmp $@; fi
+
 # 编译规则：把 .o 生成到 bin 目录
-$(BIN_DIR)/%.o: %.cpp | $(BIN_DIR)
+$(BIN_DIR)/%.o: %.cpp $(CURVE_STAMP) | $(BIN_DIR)
 	$(GXX) $(GXXFLAGS) -c -o $@ $<
 
 # 清理

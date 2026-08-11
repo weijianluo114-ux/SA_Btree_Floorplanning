@@ -11,7 +11,6 @@
 
 //----------------new include---------------------------//
 #include "utils.h"
-#include "GMS.h"
 #include <chrono> // 如果原来没有
 #include <sstream>
 #include <tuple>
@@ -24,7 +23,9 @@ using namespace std;
 
 //---------------------new MACRO------------------------//
 // #define DEBUG 1
-#define CURVE_MODE 1
+#ifndef CURVE_MODE
+#define CURVE_MODE 0
+#endif
 
 //======================================================//
 
@@ -38,57 +39,13 @@ struct SA_config
     double epsilon = 0.0001;   // 最低温度阈值
     double reject_rate = 0.99; // 最大拒绝率
     // int k = 20;                // 原始(b100)的：每块试探次数系数 (N = k * num_hardblocks)
-    int k = 40;                   // 每块试探次数系数 (N = k * num_hardblocks)
-    int max_seconds_divisor = 10; // 阶段超时: max_seconds = (n / divisor)^2
-    int time_limit = 1195;        // 总运行时间上限 (秒)
+    int k = 40; // 每块试探次数系数 (N = k * num_hardblocks)
     // 操作概率 (当前为均匀 rand()%3，可扩展)
     double op_prob[3] = {1.0 / 3, 1.0 / 3, 1.0 / 3};
     // double t0_block_divisor = 1.0; // 原始(b100)的：T0 = -cost * (n / divisor) / log(P)
     double t0_block_divisor = 100.0; // T0 = -cost * (n / divisor) / log(P)
-};
-
-// ========== GMS 算法配置 ==========
-struct GMS_config
-{
-    // 操作概率
-    double prob_rotate = 0.1; // 旋转操作的概率
-    double prob_swap = 0.8;   // 交换操作的概率
-    double prob_move = 0.1;   // 移动操作的概率
-    // 偏置探索
-    double bias_explore_ratio = 0.1; // 纯随机探索概率
-    // SA 参数
-    double P = 0.95;           // 初始接受概率，用于计算 T0
-    double r = 0.85;           // 温度衰减系数
-    double epsilon = 0.0001;   // 最低温度阈值
-    double reject_rate = 0.99; // 最大拒绝率
-    int k = 40;                // 每块试探次数系数 (N = k * num_hardblocks)
-    // 超时参数
-    int max_seconds_divisor = 20; // 阶段超时: max_seconds = (n / divisor)^2
-    int time_limit = 1195;        // 总运行时间上限 (秒)
-    // T0 公式中的分母 (GMS 特有)
-    double t0_block_divisor = 100.0; // T0 = -cost * (n / divisor) / log(P)
-};
-
-// ========== GMS_DoubleMatrix 算法配置 ==========
-struct GMS_DoubleMatrix_config
-{
-    // 操作概率
-    double prob_rotate = 0.1; // 旋转操作的概率
-    double prob_swap = 0.8;   // 交换操作的概率
-    double prob_move = 0.1;   // 移动操作的概率
-    // 偏置探索
-    double bias_explore_ratio = 0.1; // 纯随机探索概率
-    // SA 参数
-    double P = 0.95;           // 初始接受概率，用于计算 T0
-    double r = 0.85;           // 温度衰减系数
-    double epsilon = 0.0001;   // 最低温度阈值
-    double reject_rate = 0.99; // 最大拒绝率
-    int k = 40;                // 每块试探次数系数 (N = k * num_hardblocks)
-    // 超时参数
-    int max_seconds_divisor = 20; // 阶段超时: max_seconds = (n / divisor)^2
-    int time_limit = 1195;        // 总运行时间上限 (秒)
-    // T0 公式中的分母 (GMS 特有)
-    double t0_block_divisor = 100.0; // T0 = -cost * (n / divisor) / log(P)
+    int time_limit = 1195;           // 总运行时间上限 (秒)
+    int max_seconds_divisor = 5;     // 阶段超时: max_seconds = (n / divisor)^2
 };
 
 // ========== FastSA 算法配置 ==========
@@ -103,29 +60,7 @@ struct FastSA_config
     double min_temp = 1e-9;            // 最低温度阈值
     int sample_size = 1000;            // 预采样大小
     double ewma_alpha = 0.4;           // EWMA 平滑系数
-    int max_seconds_divisor = 10;      // 阶段超时: max_seconds = (n / divisor)^2
-};
-
-// ========== GMS_FastSA 算法配置 ==========
-struct GMS_FastSA_config
-{
-    double t1_amplify = 100.0;
-    // GMS 偏置选择参数
-    double prob_rotate = 0.1;
-    double prob_swap = 0.8;
-    double prob_move = 0.1;
-    double bias_explore_ratio = 0.1;
-
-    // FastSA 温度调度参数
-    double P = 0.95;
-    double c = 100.0;
-    int k = 7;
-    int max_iter = 200000;
-    int max_consecutive_reject = 5000;
-    double min_temp = 1e-9;
-    int sample_size = 1000;
-    double ewma_alpha = 0.4;
-    int max_seconds_divisor = 10;
+    int max_seconds_divisor = 5.0;     // 阶段超时: max_seconds = (n / divisor)^2
 };
 
 // ========== SawTooth_FastSA 算法配置 ==========
@@ -149,39 +84,8 @@ struct SawTooth_FastSA_config
     double min_temp = 1e-9;            // 最低温度阈值
     int sample_size = 1000;            // 预采样大小
     double ewma_alpha = 0.4;           // EWMA 平滑系数
-    int max_seconds_divisor = 10;      // 阶段超时: max_seconds = (n / divisor)^2
+    int max_seconds_divisor = 5.0;     // 阶段超时: max_seconds = (n / divisor)^2
 };
-
-// ========== GMS_SawTooth_FastSA 算法配置 ==========
-struct GMS_SawTooth_FastSA_config
-{
-    double t1_amplify = 100.0;
-    // GMS 偏置选择参数
-    double prob_rotate = 0.1;
-    double prob_swap = 0.8;
-    double prob_move = 0.1;
-    double bias_explore_ratio = 0.1;
-
-    // ——— 新增 ———
-    int stagnation_limit = 200; // 连续无改进的迭代次数阈值，触发回火
-
-    // SawTooth_FastSA 参数
-    double REHEAT_DECAY = 0.9;
-    int REHEAT_THRESHOLD = 200;
-    double REHEAT_ROLLBACK_RATIO = 0.6;
-
-    double P = 0.95;
-    double c = 100.0;
-    int k = 7;
-    int max_iter = 200000;
-    int max_consecutive_reject = 5000;
-    double min_temp = 1e-9;
-    int sample_size = 1000;
-    double ewma_alpha = 0.4;
-    int max_seconds_divisor = 10;
-};
-
-//======================================================//
 
 typedef struct hardblock
 {
@@ -226,9 +130,6 @@ u_int32_t T_uphill = 0; // 某个温度下接受了多少次“更差”的解�
 u_int32_t T_reject = 0; // 某个温度下拒绝了多少次“更差”的解。用于控制当前温度下的搜索强度
 #endif
 double T;
-
-// 全局控制标志
-bool g_curve_mode = false; // 默认关闭曲线输出
 
 //------------------------------------------------------------------------
 
@@ -487,351 +388,6 @@ void InitBtree() // 更有约束，试图让初始树对应的 floorplan 更容�
     }
 }
 
-void AreaBasedInitBtree()
-{
-#ifdef DEBUG
-    ScopedTimer t("AreaBasedInitBtree");
-#endif
-    btree = vector<Node>(num_hardblocks);
-    vector<int> inserted(num_hardblocks, 0);
-
-    vector<HardBlock> hardblocks_temp(hardblocks);
-
-    sort(hardblocks_temp.begin(), hardblocks_temp.end(), [&](HardBlock a, HardBlock b) {
-        return a.width * a.height > b.width * b.height;
-    });
-
-    root_block = hardblocks_temp[0].id;
-    btree[root_block].parent = -1;
-    inserted[root_block] = 1;
-
-    int row_node = root_block;
-    int col_node = root_block;
-    int width = hardblocks[root_block].width;
-    int inserted_cnt = 1;
-
-    for (int i = 1; i < num_hardblocks; i++)
-    {
-        int node = hardblocks_temp[i].id;
-        //printf("insert id: %2d, area: %4d\n", node, hardblocks[i].width * hardblocks[i].height);
-        btree[node].left_child = -1;
-        btree[node].right_child = -1;
-        if (width > W)
-        {
-            btree[node].parent = row_node;
-            btree[row_node].right_child = node;
-            row_node = node;
-            col_node = node;
-            width = hardblocks[node].width;
-        }
-        else
-        {
-            btree[node].parent = col_node;
-            btree[col_node].left_child = node;
-            col_node = node;    
-            width += hardblocks[node].width;
-        }
-
-        inserted[node] = 1;
-        inserted_cnt++;
-    }
-}
-
-void DegreeBasedInitBtree()
-{
-
-#ifdef DEBUG
-    ScopedTimer t("DegreeBasedInitBtree");
-#endif
-    btree = vector<Node>(num_hardblocks);
-
-    //----------------------------------
-    // calculate degree
-    //----------------------------------
- 
-    vector<int> degree(num_hardblocks,0);
-
-    for(const auto& net:nets)
-    {
-        int k=0;
-
-        for(int pin:net)
-        {
-            if(pin<num_hardblocks)
-                k++;
-        }
-
-        for(int pin:net)
-        {
-            if(pin<num_hardblocks)
-                degree[pin]+=k-1;
-        }
-    }
-    //----------------------------------
-    // sort by degree
-    //----------------------------------
-
-    vector<int> order(num_hardblocks);
-
-    for (int i = 0; i < num_hardblocks; i++)
-        order[i] = i;
-
-    sort(order.begin(), order.end(),
-        [&](int a, int b)
-        {
-            return degree[a] > degree[b];
-        });
-
-    //----------------------------------
-    // build B*-tree
-    //----------------------------------
-
-    root_block = order[0];
-
-    btree[root_block].parent = -1;
-    btree[root_block].left_child = -1;
-    btree[root_block].right_child = -1;
-
-    int row_node = root_block;
-    int col_node = root_block;
-
-    int width = hardblocks[root_block].width;
-
-    for (int idx = 1; idx < num_hardblocks; idx++)
-    {
-        int node = order[idx];
-
-        btree[node].left_child = -1;
-        btree[node].right_child = -1;
-
-        if (width > W)
-        {
-            //----------------------------------
-            // start a new row
-            //----------------------------------
-
-            btree[node].parent = row_node;
-            btree[row_node].right_child = node;
-
-            row_node = node;
-            col_node = node;
-
-            width = hardblocks[node].width;
-        }
-        else
-        {
-            //----------------------------------
-            // continue current row
-            //----------------------------------
-
-            btree[node].parent = col_node;
-            btree[col_node].left_child = node;
-
-            col_node = node;
-
-            width += hardblocks[node].width;
-        }
-    }
-}
-
-void AreaDegreeInitBtree()
-{
-#ifdef DEBUG
-    ScopedTimer t("AreaDegreeInitBtree");
-#endif
-
-    //----------------------------------
-    // initialize
-    //----------------------------------
-
-    btree = vector<Node>(num_hardblocks);
-
-    for(int i=0;i<num_hardblocks;i++)
-    {
-        btree[i].parent = -1;
-        btree[i].left_child = -1;
-        btree[i].right_child = -1;
-    }
-
-    //----------------------------------
-    // calculate degree
-    //----------------------------------
-
-    vector<int> degree(num_hardblocks, 0);
-
-    for(const auto& net : nets)
-    {
-        int k = 0;
-
-        for(int pin : net)
-        {
-            if(pin < num_hardblocks)
-                k++;
-        }
-
-        for(int pin : net)
-        {
-            if(pin < num_hardblocks)
-                degree[pin] += (k - 1);
-        }
-    }
-
-    //----------------------------------
-    // calculate score
-    //----------------------------------
-
-    vector<long long> score(num_hardblocks);
-
-    for(int i=0;i<num_hardblocks;i++)
-    {
-        long long area =
-            (long long)hardblocks[i].width *
-            hardblocks[i].height;
-
-        score[i] =
-            area *
-            degree[i];
-    }
-
-    //----------------------------------
-    // sort by score
-    //----------------------------------
-
-    vector<int> order(num_hardblocks);
-
-    for(int i=0;i<num_hardblocks;i++)
-        order[i] = i;
-
-    sort(order.begin(),
-         order.end(),
-         [&](int a,int b)
-         {
-             return score[a] > score[b];
-         });
-
-    //----------------------------------
-    // build B*-tree
-    //----------------------------------
-
-    root_block = order[0];
-
-    btree[root_block].parent = -1;
-
-    int row_node = root_block;
-    int col_node = root_block;
-
-    int width =
-        hardblocks[root_block].width;
-
-    for(int idx=1;
-        idx<num_hardblocks;
-        idx++)
-    {
-        int node = order[idx];
-
-        if(width +
-           hardblocks[node].width > W)
-        {
-            //----------------------------------
-            // new row
-            //----------------------------------
-
-            btree[node].parent =
-                row_node;
-
-            btree[row_node].right_child =
-                node;
-
-            row_node = node;
-            col_node = node;
-
-            width =
-                hardblocks[node].width;
-        }
-        else
-        {
-            //----------------------------------
-            // same row
-            //----------------------------------
-
-            btree[node].parent =
-                col_node;
-
-            btree[col_node].left_child =
-                node;
-
-            col_node = node;
-
-            width +=
-                hardblocks[node].width;
-        }
-    }
-}
-
-void AreaBFSInit() // 更随机，更像纯拓扑初始化。
-{
-#ifdef DEBUG
-    ScopedTimer t("BuildInitBtree");
-#endif
-    btree = vector<Node>(num_hardblocks); // 先开一个大小等于硬块数的节点数组，每个硬块先对应一个 Node 位置，后面会往里面填父子关系
-
-    vector<HardBlock> hardblocks_temp(hardblocks);
-
-    sort(hardblocks_temp.begin(), hardblocks_temp.end(), [&](HardBlock a, HardBlock b) {
-        return a.width * a.height > b.width * b.height;
-    });
-
-    // for (int i = 0; i < hardblocks_temp.size(); i++) {
-        
-    // }
-
-    queue<int> bfs;                          // 定义一个队列，用来按层遍历树。这里的思路是后面从根开始，一层一层往下随机挂孩子
-    vector<int> inserted(num_hardblocks, 0); // 定义一个标记数组，记录每个硬块有没有已经放进树里。0 表示没放，1 表示已经放过
-
-    int i = 0;
-
-    root_block = hardblocks_temp[i].id;   // 随机选一个硬块作为根节点。rand() % num_hardblocks 的结果范围是 0 到 num_hardblocks - 1
-    btree[root_block].parent = -1;        // 根节点没有父亲，所以父节点设为 -1，这是个常见的“无效下标”标记
-    bfs.push(root_block);                 // 把根节点放进队列，准备后面从它开始向下扩展
-    inserted[root_block] = 1;             // 标记这个根节点已经被使用，避免后面又被随机选中重复插入
-
-    int left = num_hardblocks - 1; // 除了根节点之外，还剩下多少个硬块没有放进树里。因为根已经用了一个，所以初值是总数减 1
-    while (!bfs.empty())           // 只要队列里还有节点，就继续处理。队列里的节点就是当前已经放入树中的父节点，后面要给它们分配孩子。
-    {
-        int parent = bfs.front(); // 返回队首的引用     取出队首节点作为当前父节点，但还没有从队列删除它
-        bfs.pop();                // 把刚才取出的父节点从队列中移除，表示它已经开始处理了
-
-        int left_child = -1, right_child = -1; // 先把左右孩子都初始化成无效值，表示这个父节点一开始还没有孩子
-        if (left > 0)                          // 如果还有没放进树里的硬块，就给当前父节点分配孩子
-        {
-            left_child = hardblocks_temp[++i].id;
-
-            btree[parent].left_child = left_child; // 把刚找到的节点挂到当前父节点的左边。
-            bfs.push(left_child);                  // 把这个左孩子也放进队列，方便后面继续给它分配孩子
-            inserted[left_child] = 1;              // 标记这个节点已经用过，防止后面再次随机选到它
-            left--;                                // 剩余未插入的节点数减 1
-            // 这一段是在判断是否还能再分配一个右孩子。如果还有剩余节点，就同样随机找一个没用过的节点作为右孩子，并挂到当前父节点右边
-            if (left > 0)
-            {
-                right_child = hardblocks_temp[++i].id;
-
-                btree[parent].right_child = right_child; // 把随机得到的节点挂到右边
-                bfs.push(right_child);                   // 把右孩子也放入队列，等待后续扩展
-                inserted[right_child] = 1;
-                left--;
-            }
-        }
-
-        // 其实前面已经赋值过一次了，所以这里是重复赋值，功能上没有新增作用。
-        btree[parent].left_child = left_child;
-        btree[parent].right_child = right_child;
-        if (left_child != -1)
-            btree[left_child].parent = parent; // 如果左孩子确实存在，就设置它的父节点
-        if (right_child != -1)
-            btree[right_child].parent = parent; // 把左孩子的父指针指回当前父节点
-    }
-}
-
 // 这个函数是在“递归给树上的每个块算坐标”。它的核心是：知道父块的位置后，按照 B*-tree 的规则，把当前块放到父块右边或上方，并更新轮廓线
 void BtreePreorderTraverse(int cur_node, bool left)
 {
@@ -986,53 +542,24 @@ Cost CalculateCost()
     if (height > W)
         height_penalty = ((double)height / W);
     // c.cost = area_cost + wl_cost + R_cost + width_penalty + height_penalty; // （原来）把所有代价项加起来，得到最终总成本。模拟退火后面就是用这个 c.cost 来判断当前布局好不好、要不要接受
-    //new
-    double area_weight = 0.2;
-    double wl_weight = 0.2;
-    c.cost = area_weight*area_cost + wl_weight*wl_cost + (0.5-area_weight-wl_weight)*R_cost + 0.25*width_penalty + 0.25*height_penalty; // （更改后）把所有代价项加起来，得到最终总成本。模拟退火后面就是用这个 c.cost 来判断当前布局好不好、要不要接受
-    //new
-
-
-// #ifdef DEBUG
-//     cout << "Width:      " << c.width << '\n';
-//     cout << "Height:     " << c.height << '\n';
-//     cout << "Area:       " << c.area << '\n';
-//     cout << "Wirelength: " << c.wirelength << '\n';
-//     cout << "R:          " << c.R << '\n';
-//     cout << "Cost:       " << area_cost << " + " << wl_cost << " + " << R_cost << " + "
-//          << width_penalty << " + " << height_penalty << " = " << c.cost << '\n';
-//     cout << '\n';
-// #endif
-// #ifdef DEBUG     //在批量运行的情况下把这个实时查看关闭
-//     static auto last_update = std::chrono::steady_clock::now();
-//     auto now = std::chrono::steady_clock::now();
-//     double elapsed = std::chrono::duration<double>(now - last_update).count();
-//     if (elapsed >= 1.0)
-//     {
-//         std::ostringstream oss;
-//         oss << "\rCost:" << c.cost << " | Area:" << c.area
-//             << " | WL:" << c.wirelength << " | W:" << c.width
-//             << " H:" << c.height << " | R:" << c.R << "          ";
-//         std::cout << oss.str() << std::flush;
-//         last_update = now;
-//     }
-// #endif
+    // new
+    double area_weight = 0.0;
+    double wl_weight = 0.4 - area_weight;
+    c.cost = area_weight * area_cost + wl_weight * wl_cost + (0.5 - area_weight - wl_weight) * R_cost + 0.25 * width_penalty + 0.25 * height_penalty; // （更改后）把所有代价项加起来，得到最终总成本。模拟退火后面就是用这个 c.cost 来判断当前布局好不好、要不要接受
+    // new
 
 // new--------------------------------
 #if CURVE_MODE // 注意，以下会把每一次扰动的结果都记录下来，可能非常耗时
                // 新增：输出一行 CSV 格式的数据（换行结尾）
-    // 使用 "CSV:" 前缀便于 Python 过滤
-    if (g_curve_mode && T != 0)
-    {
-        std::cout << "CSV:"
-                  << c.width << "," << c.height << ","
-                  << c.area << "," << c.wirelength << ","
-                  << c.R << "," << c.cost << ","
-                  << Total_Moves << "," << T_Moves << ","
-                  << T_uphill << "," << T_reject << ","
-                  << T
-                  << std::endl;
-    }
+               // 使用 "CSV:" 前缀便于 Python 过滤
+    std::cout << "CSV:"
+              << c.width << "," << c.height << ","
+              << c.area << "," << c.wirelength << ","
+              << c.R << "," << c.cost << ","
+              << Total_Moves << "," << T_Moves << ","
+              << T_uphill << "," << T_reject << ","
+              << T
+              << std::endl;
 #endif
     // -----------------------------------
 
@@ -1311,10 +838,7 @@ void SimulatedAnnealing(const SA_config &cfg)
 
 // new----------------------------------------------
 #if CURVE_MODE
-    if (g_curve_mode)
-    {
-        Total_Moves = 0;
-    }
+    Total_Moves = 0;
 #endif
     // new_end----------------------------------------------
 
@@ -1359,12 +883,9 @@ void SimulatedAnnealing(const SA_config &cfg)
 
 // new----------------------------------------------
 #if CURVE_MODE
-        if (g_curve_mode)
-        {
-            T_Moves = 0;
-            T_uphill = 0;
-            T_reject = 0;
-        }
+        T_Moves = 0;
+        T_uphill = 0;
+        T_reject = 0;
 #endif
         // new_end----------------------------------------------
 
@@ -1462,11 +983,8 @@ void SimulatedAnnealing(const SA_config &cfg)
 
             // new----------------------------------------------
 #if CURVE_MODE
-            if (g_curve_mode)
-            {
-                Total_Moves++; // 实现总次数技计数
-                T_Moves++;
-            }
+            Total_Moves++; // 实现总次数技计数
+            T_Moves++;
 #endif
             // new_end----------------------------------------------
 
@@ -1482,10 +1000,7 @@ void SimulatedAnnealing(const SA_config &cfg)
 
                     // new----------------------------------------------
 #if CURVE_MODE
-                    if (g_curve_mode)
-                    {
-                        T_uphill++;
-                    }
+                    T_uphill++;
 #endif
                     // new_end----------------------------------------------
                 }
@@ -1527,10 +1042,7 @@ void SimulatedAnnealing(const SA_config &cfg)
             {
                 // new----------------------------------------------
 #if CURVE_MODE
-                if (g_curve_mode)
-                {
-                    T_reject++;
-                }
+                T_reject++;
 #endif
                 // new_end----------------------------------------------
 
@@ -1564,585 +1076,6 @@ void SimulatedAnnealing(const SA_config &cfg)
     PrintAndVerifyResult();
 }
 
-void SimulatedAnnealing_GMS(const GMS_config &cfg)
-{
-#ifdef DEBUG
-    ScopedTimer t("SimulatedAnnealing"); // 记录函数执行时间
-#endif
-    // new----------------------------------------------
-#if CURVE_MODE
-    if (g_curve_mode)
-    {
-        Total_Moves = 0;
-    }
-#endif
-    // new_end----------------------------------------------
-
-    //----------------------Guided Move Selection---------------------------//
-
-    // 初始化
-    BiasSelector selector(num_hardblocks);
-    // double operation_probs[3] = {1.0, 0.0, 0.0}; // 旋转, 交换, 移动
-    // double operation_probs[3] = {0.0, 1.0, 0.0}; // 旋转, 交换, 移动
-    // double operation_probs[3] = {0.0, 0.0, 1.0}; // 旋转, 交换, 移动
-    // double operation_probs[3] = {0.33, 0.34, 0.33}; // 旋转, 交换, 移动
-    double operation_probs[3] = {cfg.prob_rotate, cfg.prob_swap, cfg.prob_move}; // 旋转, 交换, 移动
-    double bias_explore_ratio = cfg.bias_explore_ratio;                          // 以0.1的概率完全随机探索，其余0.9概率使用偏置选择
-
-    //----------------------------------------------------------------------//
-
-    min_cost = CalculateCost();      // 先调用 CalculateCost 计算当前树对应的版图代价、宽高、面积、线长等，并把结果存进min_cost
-    min_cost_floorplan = hardblocks; // 把当前这一版硬块布局复制到 min_cost_floorplan 里。hardblocks 里存的是每个块当前的坐标、宽高、旋转状态，所以这一步相当于把当前解的具体布局快照保存下来
-
-    const double P = cfg.P;                     // 这是初始接受概率参数。它用于后面计算初始温度 T0，表示希望在一开始对较差解也有较高接受概率。
-    const double r = cfg.r;                     // 温度衰减系数。每一轮大循环结束后，温度会乘上这个值，也就是 T *= r;，表示逐步降温。
-    const double epsilon = cfg.epsilon;         // coolest temperature     //注释掉的最小温度阈值。原本可能想用它作为“冷却到某个程度就停止”的条件，但现在没用。
-    const double reject_rate = cfg.reject_rate; // 拒绝率
-
-    const int k = cfg.k;              // 每个硬块对应的试探次数系数。后面 N = k * num_hardblocks，表示每一轮允许的局部扰动规模和块数成正比。
-    const int N = k * num_hardblocks; // 每一温度下的基础扰动上限
-    // 初始温度。这个公式是根据“初始时差解接受概率约为 P”反推出来的。min_cost.cost 越大，初温越高；num_hardblocks 越多，初温也越高。
-    const double T0 = -min_cost.cost * (num_hardblocks / cfg.t0_block_divisor) / log(P);
-    const int max_seconds = (num_hardblocks / cfg.max_seconds_divisor) * (num_hardblocks / cfg.max_seconds_divisor); // 一个按规模变化的阶段时间上限。块越多，这个值越大，允许搜索的单阶段时间越长。
-    // const int max_seconds = 200;     // 一个按规模变化的阶段时间上限。块越多，这个值越大，允许搜索的单阶段时间越长。
-    const int TIME_LIMIT = cfg.time_limit; // 20 minutes    总运行时间上限，约等于 20 分钟减 5 秒缓冲。避免程序跑太久。
-    // 前者用于当前阶段超时判断，后者用于总时长限制
-    int seconds = 0, runtime = 0; // seconds 表示自上次 time 起经过了多少秒；runtime 表示从 init_time 开始累计运行了多少秒
-
-    // new-------------------------------------------------
-    T = T0; // 当前温度，初始时等于 T0，后面每轮会下降
-    // new_end----------------------------------------------
-    int MT = 0;                // 当前温度下已经尝试了多少次移动。通常理解为 move trial count
-    int uphill = 0;            // 当前温度下接受了多少次“更差”的解。用于控制当前温度下的搜索强度
-    int reject = 0;            // 当前温度下拒绝了多少次候选解。这个变量在这里统计没被接受的操作数
-    Cost prev_cost = min_cost; // 保存当前基准解的代价。后面每做一步扰动，都拿新代价和 prev_cost 比较
-    in_fixed_outline = false;  // 先假设还没有找到满足固定外框的可行解。后面如果找到，就会改成 true
-
-    clock_t init_time = clock(); // 记录模拟退火开始时的 CPU 时间，用来算总运行时间
-    clock_t time = init_time;    // 记录“上一段计时起点”。后面如果超时但还没找到可行解，会重置这个时间点。
-
-    do
-    {
-        MT = 0;
-        uphill = 0;
-        reject = 0;
-
-        // new----------------------------------------------
-#if CURVE_MODE
-        if (g_curve_mode)
-        {
-            T_Moves = 0;
-            T_uphill = 0;
-            T_reject = 0;
-        }
-#endif
-        // new_end----------------------------------------------
-
-        do
-        {
-            vector<HardBlock> hardblocks_temp(hardblocks); // 复制当前所有硬块的信息，作为临时备份。里面保存的是每个块当前的坐标、宽高、旋转状态等。
-            vector<Node> btree_temp(btree);                // 复制当前 B*-tree 的结构，作为临时备份。里面保存的是每个节点的父子关系。
-            int prev_root_block = root_block;              // 记录当前树的根节点编号。因为后面做 Swap 或 Move 时，根节点有可能变化，所以也要单独备份。
-
-            // new--------------------------------
-            // ---- 使用偏置选择模块对 ----
-            bool use_bias = ((double)rand() / RAND_MAX) >= bias_explore_ratio;
-
-            int M;
-            int a, b;
-            if (!use_bias)
-            {
-                // 完全随机选择操作
-                M = rand() % 3;
-                if (M == 0)
-                {
-                    a = rand() % num_hardblocks;
-                    b = a; // 表示旋转
-                }
-                else if (M == 1)
-                {
-                    a = rand() % num_hardblocks;
-                    do
-                    {
-                        b = rand() % num_hardblocks;
-                    } while (a == b);
-                }
-                else if (M == 2)
-                {
-                    a = rand() % num_hardblocks;
-                    do
-                    {
-                        b = rand() % num_hardblocks;
-                    } while (a == b || btree[a].parent == b);
-                }
-                else
-                {
-                    cout << "[Error] Unspecified Move\n";
-                    exit(1);
-                }
-            }
-            else
-            {
-                // 偏置选择：先按固定概率选操作类型
-                double op_rand = (double)rand() / RAND_MAX;
-                if (op_rand < operation_probs[0])
-                {
-                    M = 0; // 旋转
-                    a = rand() % num_hardblocks;
-                    b = a;
-                }
-                else if (op_rand < operation_probs[0] + operation_probs[1])
-                {
-                    M = 1; // 交换
-                    tie(a, b) = selector.selectPair(T);
-                }
-                else
-                {
-                    M = 2; // 移动
-                    tie(a, b) = selector.selectPair(T);
-                    // 移动前需要保证 b 不是 a 的父节点，你在实际执行时处理即可
-                    if (btree[a].parent == b)
-                    {
-                        a = rand() % num_hardblocks;
-                        do
-                        {
-                            b = rand() % num_hardblocks;
-                        } while (a == b || btree[a].parent == b);
-                    }
-                }
-            }
-            //-----------------------------------
-
-            // new--------------------------------
-            // 执行扰动
-            if (M == 0)
-            {
-                Rotate(a);
-            }
-            else if (M == 1)
-            {
-                Swap(a, b);
-            }
-            else
-            { // M == 2
-                // 防止移动时 b 是 a 的父节点（简单交换）
-                Move(a, b);
-            }
-            //-----------------------------------
-
-            // new----------------------------------------------
-#if CURVE_MODE
-            if (g_curve_mode)
-            {
-                Total_Moves++; // 实现总次数技计数
-                T_Moves++;
-            }
-#endif
-            // new_end----------------------------------------------
-
-            MT++;                                               // 增量计数当前温度层的尝试次数。
-            Cost cur_cost = CalculateCost();                    // 计算做完扰动后的当前解代价。
-            double delta_cost = cur_cost.cost - prev_cost.cost; // 计算新解和当前基准解 prev_cost 之间的代价差；正值表示变差（更坏），负值表示变好（更优）。
-            double random = ((double)rand()) / RAND_MAX;        // 生成一个 0 到 1 之间的随机浮点数，用于与 Metropolis 接受概率比较
-            // new--------------------------------
-            bool accepted = false; // 定义在循环内
-            //-----------------------------------
-
-            if (delta_cost <= 0 || random < exp(-delta_cost / T)) // 如果 delta_cost <= 0（变优或相等）或以概率 exp(-delta_cost / T) 接受变差解，则进入接受分支（Metropolis 准则）。
-            {
-                // new--------------------------------
-                accepted = true;
-                //-----------------------------------
-
-                if (delta_cost > 0) // 若接受的是变差解（delta_cost > 0），则把 uphill++（记录当前温度下接受更差解的次数）。
-                {
-                    uphill++;
-
-                    // new----------------------------------------------
-#if CURVE_MODE
-                    if (g_curve_mode)
-                    {
-                        T_uphill++;
-                    }
-#endif
-                    // new_end----------------------------------------------
-                }
-
-                // feasible solution with minimum cost
-                if (cur_cost.width <= W && cur_cost.height <= W) // 当 cur_cost.width <= W && cur_cost.height <= W 时视为落入固定外形（feasible）。
-                {
-                    if (in_fixed_outline)
-                    {
-                        if (cur_cost.cost < min_cost_fixed_outline.cost) // 如果已经有可行解（in_fixed_outline == true），且当前代价更小则更新可行解最优记录
-                        {
-                            min_cost_root_block_fixed_outline = root_block;
-                            min_cost_fixed_outline = cur_cost;
-                            min_cost_floorplan_fixed_outline = hardblocks;
-                            min_cost_btree_fixed_outline = btree;
-                        }
-                    }
-                    else
-                    {
-                        in_fixed_outline = true;                        // 标记可行解: in_fixed_outline = true; — 标记已经找到一个落入固定外形（宽高都 <= W）的可行解
-                        min_cost_root_block_fixed_outline = root_block; // 记录当前解的根块编号，便于后续恢复/输出
-                        min_cost_fixed_outline = cur_cost;              // 把当前计算得到的 Cost（宽、高、面积、线长、总代价等）保存为当前可行解的最优代价记录
-                        min_cost_floorplan_fixed_outline = hardblocks;  // 复制并保存当前所有硬块的位置/尺寸/旋转状态，作为可行解的最优版图快照
-                        min_cost_btree_fixed_outline = btree;           // 复制并保存当前的 B-树结构，作为可行解对应的树结构快照
-                    }
-                }
-
-                // infeasible solution with minimum cost
-                if (cur_cost.cost < min_cost.cost) // 若当前解的总代价更小，则更新“历史最优解”
-                {
-                    min_cost_root_block = root_block;
-                    min_cost = cur_cost;
-                    min_cost_floorplan = hardblocks;
-                    min_cost_btree = btree;
-                }
-
-                prev_cost = cur_cost;
-            }
-            else
-            {
-                // new--------------------------------
-                accepted = false;
-#if CURVE_MODE
-                if (g_curve_mode)
-                {
-                    T_reject++;
-                }
-#endif
-                //-----------------------------------
-
-                reject++;                     // 增加拒绝计数器（记录本次扰动被拒绝），用于后续停止/统计条件
-                root_block = prev_root_block; // 把根节点恢复到扰动前的值（prev_root_block 在扰动前保存），以撤销可能的根变更
-                if (M == 0)
-                    hardblocks = hardblocks_temp; // 根据扰动类型恢复状态——当 M==0（旋转）只修改了 hardblocks，所以用 hardblocks_temp 回退
-                else
-                    btree = btree_temp; // 否则（swap 或 move）修改的是 btree，所以用 btree_temp 回退
-            }
-            // new--------------------------------
-            // 非旋转操作就更新
-            if (M != 0)
-            {
-                selector.update(a, b, delta_cost, T, accepted);
-            }
-            //-----------------------------------
-        } while (uphill <= N && MT <= 2 * N); // 当拒绝次数小于k*num_blocks并且扰动次数小于2倍的k*num_blocks就继续，即拒绝够多或者扰动够多就结束该温度下的扰动
-
-        T *= r; // 降低温度
-
-        seconds = (clock() - time) / CLOCKS_PER_SEC;      // 计算自上一次重置 time 以来经过的秒数。
-        runtime = (clock() - init_time) / CLOCKS_PER_SEC; // 计算从模拟退火开始 (init_time) 到现在的总运行秒数。
-        if (seconds >= max_seconds && in_fixed_outline == false)
-        { // 如果本阶段耗时超过 max_seconds 并且还没找到可行解，则执行超时处理：
-            cout << "Overtime " << min_cost.width << " " << min_cost.height << '\n';
-            seconds = 0; // 将 seconds 清零并把 time 设为当前时刻（重置阶段计时器）
-            time = clock();
-            T = T0; // 将温度 T 重置为初始温度 T0（相当于在超时后重新从高温开始搜索）
-        }
-        // 当且仅当两个条件都满足时继续：
-        // 拒绝率 (float)reject/MT 小于等于 0.99（拒绝太多则停止当前退火过程），
-        // 当前温度 T 不低于阈值 epsilon（温度过低也会停止）。
-    } while ((float)reject / MT <= reject_rate && T >= epsilon);
-    // 下面表明曾有过以阶段耗时和总运行时间为停止条件的替代退出策略。
-    //  } while (seconds < max_seconds && runtime < TIME_LIMIT);
-
-    PrintAndVerifyResult();
-}
-
-void GMS_DoubleMatrix(const GMS_DoubleMatrix_config &cfg)
-{
-#ifdef DEBUG
-    ScopedTimer t("SimulatedAnnealing"); // 记录函数执行时间
-#endif
-    // new----------------------------------------------
-#if CURVE_MODE
-    if (g_curve_mode)
-    {
-        Total_Moves = 0;
-    }
-#endif
-    // new_end----------------------------------------------
-
-    //----------------------Guided Move Selection---------------------------//
-
-    // 初始化
-    BiasSelector selector_swap(num_hardblocks);
-    BiasSelector selector_move(num_hardblocks);
-    // double operation_probs[3] = {1.0, 0.0, 0.0}; // 旋转, 交换, 移动
-    // double operation_probs[3] = {0.0, 1.0, 0.0}; // 旋转, 交换, 移动
-    // double operation_probs[3] = {0.0, 0.0, 1.0}; // 旋转, 交换, 移动
-    // double operation_probs[3] = {0.33, 0.34, 0.33}; // 旋转, 交换, 移动
-    double operation_probs[3] = {cfg.prob_rotate, cfg.prob_swap, cfg.prob_move}; // 旋转, 交换, 移动
-    double bias_explore_ratio = cfg.bias_explore_ratio;                          // 以0.1的概率完全随机探索，其余0.9概率使用偏置选择
-
-    //----------------------------------------------------------------------//
-
-    min_cost = CalculateCost();      // 先调用 CalculateCost 计算当前树对应的版图代价、宽高、面积、线长等，并把结果存进min_cost
-    min_cost_floorplan = hardblocks; // 把当前这一版硬块布局复制到 min_cost_floorplan 里。hardblocks 里存的是每个块当前的坐标、宽高、旋转状态，所以这一步相当于把当前解的具体布局快照保存下来
-
-    const double P = cfg.P;                     // 这是初始接受概率参数。它用于后面计算初始温度 T0，表示希望在一开始对较差解也有较高接受概率。
-    const double r = cfg.r;                     // 温度衰减系数。每一轮大循环结束后，温度会乘上这个值，也就是 T *= r;，表示逐步降温。
-    const double epsilon = cfg.epsilon;         // coolest temperature     //注释掉的最小温度阈值。原本可能想用它作为“冷却到某个程度就停止”的条件，但现在没用。
-    const double reject_rate = cfg.reject_rate; // 拒绝率
-
-    const int k = cfg.k;              // 每个硬块对应的试探次数系数。后面 N = k * num_hardblocks，表示每一轮允许的局部扰动规模和块数成正比。
-    const int N = k * num_hardblocks; // 每一温度下的基础扰动上限
-    // 初始温度。这个公式是根据“初始时差解接受概率约为 P”反推出来的。min_cost.cost 越大，初温越高；num_hardblocks 越多，初温也越高。
-    const double T0 = -min_cost.cost * (num_hardblocks / cfg.t0_block_divisor) / log(P);
-    const int max_seconds = (num_hardblocks / cfg.max_seconds_divisor) * (num_hardblocks / cfg.max_seconds_divisor); // 一个按规模变化的阶段时间上限。块越多，这个值越大，允许搜索的单阶段时间越长。
-    // const int max_seconds = 200;     // 一个按规模变化的阶段时间上限。块越多，这个值越大，允许搜索的单阶段时间越长。
-    const int TIME_LIMIT = cfg.time_limit; // 20 minutes    总运行时间上限，约等于 20 分钟减 5 秒缓冲。避免程序跑太久。
-    // 前者用于当前阶段超时判断，后者用于总时长限制
-    int seconds = 0, runtime = 0; // seconds 表示自上次 time 起经过了多少秒；runtime 表示从 init_time 开始累计运行了多少秒
-
-    // new-------------------------------------------------
-    T = T0; // 当前温度，初始时等于 T0，后面每轮会下降
-    // new_end----------------------------------------------
-    int MT = 0;                // 当前温度下已经尝试了多少次移动。通常理解为 move trial count
-    int uphill = 0;            // 当前温度下接受了多少次“更差”的解。用于控制当前温度下的搜索强度
-    int reject = 0;            // 当前温度下拒绝了多少次候选解。这个变量在这里统计没被接受的操作数
-    Cost prev_cost = min_cost; // 保存当前基准解的代价。后面每做一步扰动，都拿新代价和 prev_cost 比较
-    in_fixed_outline = false;  // 先假设还没有找到满足固定外框的可行解。后面如果找到，就会改成 true
-
-    clock_t init_time = clock(); // 记录模拟退火开始时的 CPU 时间，用来算总运行时间
-    clock_t time = init_time;    // 记录“上一段计时起点”。后面如果超时但还没找到可行解，会重置这个时间点。
-
-    do
-    {
-        MT = 0;
-        uphill = 0;
-        reject = 0;
-
-        // new----------------------------------------------
-#if CURVE_MODE
-        if (g_curve_mode)
-        {
-            T_Moves = 0;
-            T_uphill = 0;
-            T_reject = 0;
-        }
-#endif
-        // new_end----------------------------------------------
-
-        do
-        {
-            vector<HardBlock> hardblocks_temp(hardblocks); // 复制当前所有硬块的信息，作为临时备份。里面保存的是每个块当前的坐标、宽高、旋转状态等。
-            vector<Node> btree_temp(btree);                // 复制当前 B*-tree 的结构，作为临时备份。里面保存的是每个节点的父子关系。
-            int prev_root_block = root_block;              // 记录当前树的根节点编号。因为后面做 Swap 或 Move 时，根节点有可能变化，所以也要单独备份。
-
-            // new--------------------------------
-            // ---- 使用偏置选择模块对 ----
-            bool use_bias = ((double)rand() / RAND_MAX) >= bias_explore_ratio;
-
-            int M;
-            int a, b;
-            if (!use_bias)
-            {
-                // 完全随机选择操作
-                M = rand() % 3;
-                if (M == 0)
-                {
-                    a = rand() % num_hardblocks;
-                    b = a; // 表示旋转
-                }
-                else if (M == 1)
-                {
-                    a = rand() % num_hardblocks;
-                    do
-                    {
-                        b = rand() % num_hardblocks;
-                    } while (a == b);
-                }
-                else if (M == 2)
-                {
-                    a = rand() % num_hardblocks;
-                    do
-                    {
-                        b = rand() % num_hardblocks;
-                    } while (a == b || btree[a].parent == b);
-                }
-                else
-                {
-                    cout << "[Error] Unspecified Move\n";
-                    exit(1);
-                }
-            }
-            else
-            {
-                // 偏置选择：先按固定概率选操作类型
-                double op_rand = (double)rand() / RAND_MAX;
-                if (op_rand < operation_probs[0])
-                {
-                    M = 0; // 旋转
-                    a = rand() % num_hardblocks;
-                    b = a;
-                }
-                else if (op_rand < operation_probs[0] + operation_probs[1])
-                {
-                    M = 1; // 交换
-                    tie(a, b) = selector_swap.selectPair(T);
-                }
-                else
-                {
-                    M = 2; // 移动
-                    tie(a, b) = selector_move.selectPair(T);
-                    // 移动前需要保证 b 不是 a 的父节点，你在实际执行时处理即可
-                    if (btree[a].parent == b)
-                    {
-                        a = rand() % num_hardblocks;
-                        do
-                        {
-                            b = rand() % num_hardblocks;
-                        } while (a == b || btree[a].parent == b);
-                    }
-                }
-            }
-            //-----------------------------------
-
-            // new--------------------------------
-            // 执行扰动
-            if (M == 0)
-            {
-                Rotate(a);
-            }
-            else if (M == 1)
-            {
-                Swap(a, b);
-            }
-            else
-            { // M == 2
-                // 防止移动时 b 是 a 的父节点（简单交换）
-                Move(a, b);
-            }
-            //-----------------------------------
-
-            // new----------------------------------------------
-#if CURVE_MODE
-            if (g_curve_mode)
-            {
-                Total_Moves++; // 实现总次数技计数
-                T_Moves++;
-            }
-#endif
-            // new_end----------------------------------------------
-
-            MT++;                                               // 增量计数当前温度层的尝试次数。
-            Cost cur_cost = CalculateCost();                    // 计算做完扰动后的当前解代价。
-            double delta_cost = cur_cost.cost - prev_cost.cost; // 计算新解和当前基准解 prev_cost 之间的代价差；正值表示变差（更坏），负值表示变好（更优）。
-            double random = ((double)rand()) / RAND_MAX;        // 生成一个 0 到 1 之间的随机浮点数，用于与 Metropolis 接受概率比较
-            // new--------------------------------
-            bool accepted = false; // 定义在循环内
-            //-----------------------------------
-
-            if (delta_cost <= 0 || random < exp(-delta_cost / T)) // 如果 delta_cost <= 0（变优或相等）或以概率 exp(-delta_cost / T) 接受变差解，则进入接受分支（Metropolis 准则）。
-            {
-                // new--------------------------------
-                accepted = true;
-                //-----------------------------------
-
-                if (delta_cost > 0) // 若接受的是变差解（delta_cost > 0），则把 uphill++（记录当前温度下接受更差解的次数）。
-                {
-                    uphill++;
-
-                    // new----------------------------------------------
-#if CURVE_MODE
-                    if (g_curve_mode)
-                    {
-                        T_uphill++;
-                    }
-#endif
-                    // new_end----------------------------------------------
-                }
-
-                // feasible solution with minimum cost
-                if (cur_cost.width <= W && cur_cost.height <= W) // 当 cur_cost.width <= W && cur_cost.height <= W 时视为落入固定外形（feasible）。
-                {
-                    if (in_fixed_outline)
-                    {
-                        if (cur_cost.cost < min_cost_fixed_outline.cost) // 如果已经有可行解（in_fixed_outline == true），且当前代价更小则更新可行解最优记录
-                        {
-                            min_cost_root_block_fixed_outline = root_block;
-                            min_cost_fixed_outline = cur_cost;
-                            min_cost_floorplan_fixed_outline = hardblocks;
-                            min_cost_btree_fixed_outline = btree;
-                        }
-                    }
-                    else
-                    {
-                        in_fixed_outline = true;                        // 标记可行解: in_fixed_outline = true; — 标记已经找到一个落入固定外形（宽高都 <= W）的可行解
-                        min_cost_root_block_fixed_outline = root_block; // 记录当前解的根块编号，便于后续恢复/输出
-                        min_cost_fixed_outline = cur_cost;              // 把当前计算得到的 Cost（宽、高、面积、线长、总代价等）保存为当前可行解的最优代价记录
-                        min_cost_floorplan_fixed_outline = hardblocks;  // 复制并保存当前所有硬块的位置/尺寸/旋转状态，作为可行解的最优版图快照
-                        min_cost_btree_fixed_outline = btree;           // 复制并保存当前的 B-树结构，作为可行解对应的树结构快照
-                    }
-                }
-
-                // infeasible solution with minimum cost
-                if (cur_cost.cost < min_cost.cost) // 若当前解的总代价更小，则更新“历史最优解”
-                {
-                    min_cost_root_block = root_block;
-                    min_cost = cur_cost;
-                    min_cost_floorplan = hardblocks;
-                    min_cost_btree = btree;
-                }
-
-                prev_cost = cur_cost;
-            }
-            else
-            {
-                // new--------------------------------
-                accepted = false;
-#if CURVE_MODE
-                if (g_curve_mode)
-                {
-                    T_reject++;
-                }
-#endif
-                //-----------------------------------
-
-                reject++;                     // 增加拒绝计数器（记录本次扰动被拒绝），用于后续停止/统计条件
-                root_block = prev_root_block; // 把根节点恢复到扰动前的值（prev_root_block 在扰动前保存），以撤销可能的根变更
-                if (M == 0)
-                    hardblocks = hardblocks_temp; // 根据扰动类型恢复状态——当 M==0（旋转）只修改了 hardblocks，所以用 hardblocks_temp 回退
-                else
-                    btree = btree_temp; // 否则（swap 或 move）修改的是 btree，所以用 btree_temp 回退
-            }
-            // new--------------------------------
-            // 非旋转操作就更新
-            if (M == 1) // 交换操作
-            {
-                selector_swap.update(a, b, delta_cost, T, accepted);
-            }
-            else if (M == 2) // 旋转操作
-            {
-                selector_move.update(a, b, delta_cost, T, accepted);
-            }
-            //-----------------------------------
-        } while (uphill <= N && MT <= 2 * N); // 当拒绝次数小于k*num_blocks并且扰动次数小于2倍的k*num_blocks就继续，即拒绝够多或者扰动够多就结束该温度下的扰动
-
-        T *= r; // 降低温度
-
-        seconds = (clock() - time) / CLOCKS_PER_SEC;      // 计算自上一次重置 time 以来经过的秒数。
-        runtime = (clock() - init_time) / CLOCKS_PER_SEC; // 计算从模拟退火开始 (init_time) 到现在的总运行秒数。
-        if (seconds >= max_seconds && in_fixed_outline == false)
-        { // 如果本阶段耗时超过 max_seconds 并且还没找到可行解，则执行超时处理：
-            cout << "Overtime " << min_cost.width << " " << min_cost.height << '\n';
-            seconds = 0; // 将 seconds 清零并把 time 设为当前时刻（重置阶段计时器）
-            time = clock();
-            T = T0; // 将温度 T 重置为初始温度 T0（相当于在超时后重新从高温开始搜索）
-        }
-        // 当且仅当两个条件都满足时继续：
-        // 拒绝率 (float)reject/MT 小于等于 0.99（拒绝太多则停止当前退火过程），
-        // 当前温度 T 不低于阈值 epsilon（温度过低也会停止）。
-    } while ((float)reject / MT <= reject_rate && T >= epsilon);
-    // 下面表明曾有过以阶段耗时和总运行时间为停止条件的替代退出策略。
-    //  } while (seconds < max_seconds && runtime < TIME_LIMIT);
-
-    PrintAndVerifyResult();
-}
-
 void FastSA(const FastSA_config &cfg)
 {
 #ifdef DEBUG
@@ -2151,13 +1084,10 @@ void FastSA(const FastSA_config &cfg)
 
     // new----------------------------------------------
 #if CURVE_MODE
-    if (g_curve_mode)
-    {
-        Total_Moves = 0;
-        T_Moves = 0;
-        T_uphill = 0;
-        T_reject = 0;
-    }
+    Total_Moves = 0;
+    T_Moves = 0;
+    T_uphill = 0;
+    T_reject = 0;
 #endif
     // new_end----------------------------------------------
 
@@ -2303,11 +1233,8 @@ void FastSA(const FastSA_config &cfg)
 
         // new----------------------------------------------
 #if CURVE_MODE
-        if (g_curve_mode)
-        {
-            Total_Moves++;
-            T_Moves++;
-        }
+        Total_Moves++;
+        T_Moves++;
 #endif
         // new_end----------------------------------------------
 
@@ -2340,10 +1267,7 @@ void FastSA(const FastSA_config &cfg)
         {
             // new----------------------------------------------
 #if CURVE_MODE
-            if (g_curve_mode && delta_cost > 0)
-            {
-                T_uphill++;
-            }
+            T_uphill++;
 #endif
             // new_end----------------------------------------------
 
@@ -2387,10 +1311,7 @@ void FastSA(const FastSA_config &cfg)
         {
             // new----------------------------------------------
 #if CURVE_MODE
-            if (g_curve_mode)
-            {
-                T_reject++;
-            }
+            T_reject++;
 #endif
             // new_end----------------------------------------------
 
@@ -2434,13 +1355,10 @@ void SawTooth_FastSA(const SawTooth_FastSA_config &cfg)
 
     // new----------------------------------------------
 #if CURVE_MODE
-    if (g_curve_mode)
-    {
-        Total_Moves = 0;
-        T_Moves = 0;
-        T_uphill = 0;
-        T_reject = 0;
-    }
+    Total_Moves = 0;
+    T_Moves = 0;
+    T_uphill = 0;
+    T_reject = 0;
 #endif
     // new_end----------------------------------------------
 
@@ -2598,11 +1516,8 @@ void SawTooth_FastSA(const SawTooth_FastSA_config &cfg)
 
         // new----------------------------------------------
 #if CURVE_MODE
-        if (g_curve_mode)
-        {
-            Total_Moves++;
-            T_Moves++;
-        }
+        Total_Moves++;
+        T_Moves++;
 #endif
         // new_end----------------------------------------------
 
@@ -2659,10 +1574,7 @@ void SawTooth_FastSA(const SawTooth_FastSA_config &cfg)
         {
             // new----------------------------------------------
 #if CURVE_MODE
-            if (g_curve_mode && delta_cost > 0)
-            {
-                T_uphill++;
-            }
+            T_uphill++;
 #endif
             // new_end----------------------------------------------
 
@@ -2711,10 +1623,7 @@ void SawTooth_FastSA(const SawTooth_FastSA_config &cfg)
         {
             // new----------------------------------------------
 #if CURVE_MODE
-            if (g_curve_mode)
-            {
-                T_reject++;
-            }
+            T_reject++;
 #endif
             // new_end----------------------------------------------
 
@@ -2745,628 +1654,6 @@ void SawTooth_FastSA(const SawTooth_FastSA_config &cfg)
     }
 
     // 记录总运行时间
-    double runtime = (double)(clock() - start_time) / CLOCKS_PER_SEC;
-    cout << "Total runtime: " << runtime << " seconds" << endl;
-
-    PrintAndVerifyResult();
-}
-
-void GMS_FastSA(const GMS_FastSA_config &cfg)
-{
-#ifdef DEBUG
-    ScopedTimer t("SimulatedAnnealing");
-#endif
-
-#if CURVE_MODE
-    if (g_curve_mode)
-    {
-        Total_Moves = 0;
-        T_Moves = 0;
-        T_uphill = 0;
-        T_reject = 0;
-    }
-#endif
-
-    // ---------- 初始化 ----------
-    min_cost = CalculateCost();
-    min_cost_floorplan = hardblocks;
-
-    // ---------- GMS: 偏置选择器 ----------
-    BiasSelector selector(num_hardblocks);
-    double operation_probs[3] = {cfg.prob_rotate, cfg.prob_swap, cfg.prob_move};
-    double bias_explore_ratio = cfg.bias_explore_ratio;
-
-    // ========== FastSA 预采样估算 Δavg ==========
-    vector<HardBlock> hardblocks_bak = hardblocks;
-    vector<Node> btree_bak = btree;
-    int root_block_bak = root_block;
-    Cost min_cost_bak = min_cost;
-
-    double total_uphill = 0.0;
-    int uphill_count = 0;
-    const int SAMPLE_SIZE = cfg.sample_size;
-
-    for (int s = 0; s < SAMPLE_SIZE; ++s)
-    {
-        int M = rand() % 3;
-        if (M == 0)
-        {
-            int node = rand() % num_hardblocks;
-            Rotate(node);
-        }
-        else if (M == 1)
-        {
-            int n1 = rand() % num_hardblocks;
-            int n2;
-            do
-            {
-                n2 = rand() % num_hardblocks;
-            } while (n2 == n1);
-            Swap(n1, n2);
-        }
-        else
-        {
-            int node = rand() % num_hardblocks;
-            int to_node;
-            do
-            {
-                to_node = rand() % num_hardblocks;
-            } while (to_node == node || btree[node].parent == to_node);
-            Move(node, to_node);
-        }
-        Cost cur = CalculateCost();
-        double delta = cur.cost - min_cost.cost;
-        if (delta > 0)
-        {
-            total_uphill += delta;
-            uphill_count++;
-        }
-        hardblocks = hardblocks_bak;
-        btree = btree_bak;
-        root_block = root_block_bak;
-        CalculateCost();
-    }
-    double delta_avg = (uphill_count > 0) ? (total_uphill / uphill_count) : 1.0;
-    double T1 = cfg.t1_amplify * fabs(delta_avg / log(cfg.P));
-
-    // 恢复原始状态
-    hardblocks = hardblocks_bak;
-    btree = btree_bak;
-    root_block = root_block_bak;
-    min_cost = min_cost_bak;
-    CalculateCost();
-
-    // ========== 主循环 (FastSA 结构 + GMS 偏置选择) ==========
-    int iter = 0;
-    double avg_delta_cost = delta_avg;
-    T = T1;
-    Cost prev_cost = min_cost;
-    in_fixed_outline = false;
-
-    clock_t start_time = clock();
-    clock_t time = start_time;
-    const int max_seconds = (num_hardblocks / cfg.max_seconds_divisor) * (num_hardblocks / cfg.max_seconds_divisor);
-    int seconds = 0;
-    int consecutive_reject = 0;
-
-    while (true)
-    {
-        // ---------- 超时重启 ----------
-        seconds = (clock() - time) / CLOCKS_PER_SEC;
-        if (seconds >= max_seconds && !in_fixed_outline)
-        {
-            cout << "Overtime " << min_cost.width << " " << min_cost.height << '\n';
-            seconds = 0;
-            time = clock();
-            iter = 0;
-            avg_delta_cost = delta_avg;
-            T = T1;
-            prev_cost = min_cost;
-            consecutive_reject = 0;
-        }
-
-        // ---------- 保存状态 ----------
-        vector<HardBlock> hardblocks_temp = hardblocks;
-        vector<Node> btree_temp = btree;
-        int prev_root_block = root_block;
-
-        // ---------- GMS 偏置选择操作 ----------
-        bool use_bias = ((double)rand() / RAND_MAX) >= bias_explore_ratio;
-        int M, a, b;
-
-        if (!use_bias)
-        {
-            // 完全随机探索（同 FastSA）
-            M = rand() % 3;
-            if (M == 0)
-            {
-                a = rand() % num_hardblocks;
-                b = a;
-            }
-            else if (M == 1)
-            {
-                a = rand() % num_hardblocks;
-                do
-                {
-                    b = rand() % num_hardblocks;
-                } while (a == b);
-            }
-            else
-            {
-                a = rand() % num_hardblocks;
-                do
-                {
-                    b = rand() % num_hardblocks;
-                } while (a == b || btree[a].parent == b);
-            }
-        }
-        else
-        {
-            // 偏置选择
-            double op_rand = (double)rand() / RAND_MAX;
-            if (op_rand < operation_probs[0])
-            {
-                M = 0;
-                a = rand() % num_hardblocks;
-                b = a;
-            }
-            else if (op_rand < operation_probs[0] + operation_probs[1])
-            {
-                M = 1;
-                tie(a, b) = selector.selectPair(T);
-            }
-            else
-            {
-                M = 2;
-                tie(a, b) = selector.selectPair(T);
-                if (btree[a].parent == b)
-                {
-                    a = rand() % num_hardblocks;
-                    do
-                    {
-                        b = rand() % num_hardblocks;
-                    } while (a == b || btree[a].parent == b);
-                }
-            }
-        }
-
-        // ---------- 执行扰动 ----------
-        if (M == 0)
-            Rotate(a);
-        else if (M == 1)
-            Swap(a, b);
-        else
-            Move(a, b);
-
-#if CURVE_MODE
-        if (g_curve_mode)
-        {
-            Total_Moves++;
-            T_Moves++;
-        }
-#endif
-
-        // ---------- 代价计算 + FastSA 温度更新 ----------
-        Cost cur_cost = CalculateCost();
-
-        double delta_cost = cur_cost.cost - prev_cost.cost;
-        avg_delta_cost = (1 - cfg.ewma_alpha) * avg_delta_cost + cfg.ewma_alpha * fabs(delta_cost);
-
-        int n = iter + 1;
-        if (n == 1)
-            T = T1;
-        else if (n <= cfg.k)
-            T = T1 * avg_delta_cost / (n * cfg.c);
-        else
-            T = T1 * avg_delta_cost / n;
-        if (T < cfg.min_temp)
-            T = cfg.min_temp;
-
-        // ---------- Metropolis 接受准则 ----------
-        double random = ((double)rand()) / RAND_MAX;
-        bool accepted = false;
-
-        if (delta_cost <= 0 || random < exp(-delta_cost / T))
-        {
-            accepted = true;
-#if CURVE_MODE
-            if (g_curve_mode && delta_cost > 0)
-                T_uphill++;
-#endif
-            prev_cost = cur_cost;
-            consecutive_reject = 0;
-
-            // 可行解更新
-            if (cur_cost.width <= W && cur_cost.height <= W)
-            {
-                if (in_fixed_outline)
-                {
-                    if (cur_cost.cost < min_cost_fixed_outline.cost)
-                    {
-                        min_cost_root_block_fixed_outline = root_block;
-                        min_cost_fixed_outline = cur_cost;
-                        min_cost_floorplan_fixed_outline = hardblocks;
-                        min_cost_btree_fixed_outline = btree;
-                    }
-                }
-                else
-                {
-                    in_fixed_outline = true;
-                    min_cost_root_block_fixed_outline = root_block;
-                    min_cost_fixed_outline = cur_cost;
-                    min_cost_floorplan_fixed_outline = hardblocks;
-                    min_cost_btree_fixed_outline = btree;
-                }
-            }
-
-            // 全局最优解
-            if (cur_cost.cost < min_cost.cost)
-            {
-                min_cost_root_block = root_block;
-                min_cost = cur_cost;
-                min_cost_floorplan = hardblocks;
-                min_cost_btree = btree;
-            }
-        }
-        else
-        {
-            accepted = false;
-#if CURVE_MODE
-            if (g_curve_mode)
-                T_reject++;
-#endif
-            consecutive_reject++;
-            root_block = prev_root_block;
-            if (M == 0)
-                hardblocks = hardblocks_temp;
-            else
-                btree = btree_temp;
-            // CalculateCost();
-        }
-
-        // ---------- GMS: 更新偏置矩阵 (非旋转操作) ----------
-        if (M != 0)
-            selector.update(a, b, delta_cost, T, accepted);
-
-        iter++;
-
-        // ---------- 停止条件 ----------
-        if (consecutive_reject >= cfg.max_consecutive_reject && T <= cfg.min_temp)
-            break;
-        if (iter >= cfg.max_iter)
-            break;
-    }
-
-    double runtime = (double)(clock() - start_time) / CLOCKS_PER_SEC;
-    cout << "Total runtime: " << runtime << " seconds" << endl;
-
-    PrintAndVerifyResult();
-}
-
-void GMS_SawTooth_FastSA(const GMS_SawTooth_FastSA_config &cfg)
-{
-#ifdef DEBUG
-    ScopedTimer t("SimulatedAnnealing");
-#endif
-
-#if CURVE_MODE
-    if (g_curve_mode)
-    {
-        Total_Moves = 0;
-        T_Moves = 0;
-        T_uphill = 0;
-        T_reject = 0;
-    }
-#endif
-
-    // ---------- 初始化 ----------
-    min_cost = CalculateCost();
-    min_cost_floorplan = hardblocks;
-
-    // ---------- GMS: 偏置选择器 ----------
-    BiasSelector selector(num_hardblocks);
-    double operation_probs[3] = {cfg.prob_rotate, cfg.prob_swap, cfg.prob_move};
-    double bias_explore_ratio = cfg.bias_explore_ratio;
-
-    // ========== FastSA 预采样估算 Δavg ==========
-    vector<HardBlock> hardblocks_bak = hardblocks;
-    vector<Node> btree_bak = btree;
-    int root_block_bak = root_block;
-    Cost min_cost_bak = min_cost;
-
-    double total_uphill = 0.0;
-    int uphill_count = 0;
-    const int SAMPLE_SIZE = cfg.sample_size;
-
-    for (int s = 0; s < SAMPLE_SIZE; ++s)
-    {
-        int M = rand() % 3;
-        if (M == 0)
-        {
-            int node = rand() % num_hardblocks;
-            Rotate(node);
-        }
-        else if (M == 1)
-        {
-            int n1 = rand() % num_hardblocks;
-            int n2;
-            do
-            {
-                n2 = rand() % num_hardblocks;
-            } while (n2 == n1);
-            Swap(n1, n2);
-        }
-        else
-        {
-            int node = rand() % num_hardblocks;
-            int to_node;
-            do
-            {
-                to_node = rand() % num_hardblocks;
-            } while (to_node == node || btree[node].parent == to_node);
-            Move(node, to_node);
-        }
-        Cost cur = CalculateCost();
-        double delta = cur.cost - min_cost.cost;
-        if (delta > 0)
-        {
-            total_uphill += delta;
-            uphill_count++;
-        }
-        hardblocks = hardblocks_bak;
-        btree = btree_bak;
-        root_block = root_block_bak;
-        // CalculateCost();
-    }
-    double delta_avg = (uphill_count > 0) ? (total_uphill / uphill_count) : 1.0;
-    double T1 = cfg.t1_amplify * fabs(delta_avg / log(cfg.P));
-
-    // 恢复原始状态
-    hardblocks = hardblocks_bak;
-    btree = btree_bak;
-    root_block = root_block_bak;
-    min_cost = min_cost_bak;
-    // CalculateCost();
-
-    // ========== 主循环 (SawTooth_FastSA 结构 + GMS 偏置选择) ==========
-    int iter = 0;
-    int temp_n = 1;
-    double avg_delta_cost = delta_avg;
-    int reheat_count = 0;
-    // new-------------------------------------------------
-    T = T1;
-    // new_end----------------------------------------------
-    Cost prev_cost = min_cost;
-    in_fixed_outline = false;
-
-    clock_t start_time = clock();
-    clock_t time = start_time;
-    const int max_seconds = (num_hardblocks / cfg.max_seconds_divisor) * (num_hardblocks / cfg.max_seconds_divisor);
-    int seconds = 0;
-    int consecutive_reject = 0;
-
-    // new-------------------------------------------------
-    int reheat_plus = 1;
-    int last_improve_iter = 0; // ★★★ 新增：记录最近一次全局最优改进时刻 ★★★
-    // new_end----------------------------------------------
-
-    while (true)
-    {
-        // ---------- 超时重启 ----------
-        seconds = (clock() - time) / CLOCKS_PER_SEC;
-        if (seconds >= max_seconds && !in_fixed_outline)
-        {
-            cout << "Overtime " << min_cost.width << " " << min_cost.height << '\n';
-            seconds = 0;
-            time = clock();
-            iter = 0;
-            temp_n = 1;
-            avg_delta_cost = delta_avg;
-            T = T1;
-            prev_cost = min_cost;
-            consecutive_reject = 0;
-            // ★★★ 新增：超时重启也要重置回火相关变量 ★★★
-            last_improve_iter = 0;
-            reheat_count = 0;
-        }
-
-        // ---------- 保存状态 ----------
-        vector<HardBlock> hardblocks_temp = hardblocks;
-        vector<Node> btree_temp = btree;
-        int prev_root_block = root_block;
-
-        // ---------- GMS 偏置选择操作 ----------
-        bool use_bias = ((double)rand() / RAND_MAX) >= bias_explore_ratio;
-        int M, a, b;
-
-        if (!use_bias)
-        {
-            M = rand() % 3;
-            if (M == 0)
-            {
-                a = rand() % num_hardblocks;
-                b = a;
-            }
-            else if (M == 1)
-            {
-                a = rand() % num_hardblocks;
-                do
-                {
-                    b = rand() % num_hardblocks;
-                } while (a == b);
-            }
-            else
-            {
-                a = rand() % num_hardblocks;
-                do
-                {
-                    b = rand() % num_hardblocks;
-                } while (a == b || btree[a].parent == b);
-            }
-        }
-        else
-        {
-            double op_rand = (double)rand() / RAND_MAX;
-            if (op_rand < operation_probs[0])
-            {
-                M = 0;
-                a = rand() % num_hardblocks;
-                b = a;
-            }
-            else if (op_rand < operation_probs[0] + operation_probs[1])
-            {
-                M = 1;
-                tie(a, b) = selector.selectPair(T);
-            }
-            else
-            {
-                M = 2;
-                tie(a, b) = selector.selectPair(T);
-                if (btree[a].parent == b)
-                {
-                    a = rand() % num_hardblocks;
-                    do
-                    {
-                        b = rand() % num_hardblocks;
-                    } while (a == b || btree[a].parent == b);
-                }
-            }
-        }
-
-        // ---------- 执行扰动 ----------
-        if (M == 0)
-            Rotate(a);
-        else if (M == 1)
-            Swap(a, b);
-        else
-            Move(a, b);
-
-#if CURVE_MODE
-        if (g_curve_mode)
-        {
-            Total_Moves++;
-            T_Moves++;
-        }
-#endif
-
-        // ---------- 代价计算 + FastSA 温度更新 ----------
-        Cost cur_cost = CalculateCost();
-        double delta_cost = cur_cost.cost - prev_cost.cost;
-        avg_delta_cost = (1 - cfg.ewma_alpha) * avg_delta_cost + cfg.ewma_alpha * fabs(delta_cost);
-
-        int n = temp_n;
-        if (n == 1)
-            T = T1;
-        else if (n <= cfg.k)
-            T = T1 * avg_delta_cost / (n * cfg.c);
-        else
-            T = T1 * avg_delta_cost / n;
-        if (T < cfg.min_temp)
-            T = cfg.min_temp;
-
-        // ---------- SawTooth 回火逻辑 ----------
-        // if (consecutive_reject >= cfg.REHEAT_THRESHOLD && temp_n > 1)
-        // {
-        //     int rollback = max(1, (int)(temp_n * cfg.REHEAT_ROLLBACK_RATIO * pow(cfg.REHEAT_DECAY, reheat_count)));
-        //     temp_n = max(1, temp_n - rollback);
-        //     consecutive_reject = 0;
-        //     reheat_count++;
-        // }
-        // 回火逻辑：基于 Stagnation + 搜索空间回退
-        if (iter - last_improve_iter > cfg.stagnation_limit && temp_n > 1)
-        {
-            // 1. 回退 temp_n，温度回升
-            int rollback = max(1, (int)(temp_n * cfg.REHEAT_ROLLBACK_RATIO * pow(cfg.REHEAT_DECAY, reheat_count)));
-            temp_n = max(1, temp_n - rollback);
-
-            // 4. 重置所有计数器
-            // consecutive_reject = 0;
-            last_improve_iter = iter;
-            reheat_count++;
-            // new----------------------------------------------
-            reheat_plus++;
-            // new_end----------------------------------------------
-        }
-
-        // ---------- Metropolis 接受准则 ----------
-        double random = ((double)rand()) / RAND_MAX;
-        bool accepted = false;
-
-        if (delta_cost <= 0 || random < exp(-delta_cost / T))
-        {
-            accepted = true;
-#if CURVE_MODE
-            if (g_curve_mode && delta_cost > 0)
-                T_uphill++;
-#endif
-            // ——— 新增：当 cur_cost 优于 prev_cost 时，记录改进时刻 ———
-            // if (delta_cost < 0) // 严格改进（cost 降低）
-            //     last_improve_iter = iter;
-
-            prev_cost = cur_cost;
-            consecutive_reject = 0;
-
-            if (cur_cost.width <= W && cur_cost.height <= W)
-            {
-                if (in_fixed_outline)
-                {
-                    if (cur_cost.cost < min_cost_fixed_outline.cost)
-                    {
-                        min_cost_root_block_fixed_outline = root_block;
-                        min_cost_fixed_outline = cur_cost;
-                        min_cost_floorplan_fixed_outline = hardblocks;
-                        min_cost_btree_fixed_outline = btree;
-                    }
-                }
-                else
-                {
-                    in_fixed_outline = true;
-                    min_cost_root_block_fixed_outline = root_block;
-                    min_cost_fixed_outline = cur_cost;
-                    min_cost_floorplan_fixed_outline = hardblocks;
-                    min_cost_btree_fixed_outline = btree;
-                }
-            }
-
-            if (cur_cost.cost < min_cost.cost)
-            {
-                min_cost_root_block = root_block;
-                min_cost = cur_cost;
-                min_cost_floorplan = hardblocks;
-                min_cost_btree = btree;
-                // last_improve_iter = iter;
-            }
-        }
-        else
-        {
-            accepted = false;
-#if CURVE_MODE
-            if (g_curve_mode)
-                T_reject++;
-#endif
-            consecutive_reject++;
-            root_block = prev_root_block;
-            if (M == 0)
-                hardblocks = hardblocks_temp;
-            else
-                btree = btree_temp;
-            // CalculateCost();
-        }
-
-        // ---------- GMS: 更新偏置矩阵 (非旋转操作) ----------
-        if (M != 0)
-            selector.update(a, b, delta_cost, T, accepted);
-
-        iter++;
-        temp_n++;
-
-        // ---------- 停止条件 ----------
-        if (consecutive_reject >= cfg.max_consecutive_reject && T <= cfg.min_temp)
-            break;
-        if (iter >= cfg.max_iter)
-            break;
-    }
-
     double runtime = (double)(clock() - start_time) / CLOCKS_PER_SEC;
     cout << "Total runtime: " << runtime << " seconds" << endl;
 
@@ -3473,72 +1760,6 @@ SA_config load_SA_config_from_json(const json &j)
     return cfg;
 }
 
-GMS_config load_GMS_config_from_json(const json &j)
-{
-    GMS_config cfg;
-    if (!j.contains("GMS"))
-        return cfg;
-    const auto &gms = j["GMS"];
-    if (gms.contains("prob_rotate"))
-        cfg.prob_rotate = gms["prob_rotate"];
-    if (gms.contains("prob_swap"))
-        cfg.prob_swap = gms["prob_swap"];
-    if (gms.contains("prob_move"))
-        cfg.prob_move = gms["prob_move"];
-    if (gms.contains("bias_explore_ratio"))
-        cfg.bias_explore_ratio = gms["bias_explore_ratio"];
-    if (gms.contains("P"))
-        cfg.P = gms["P"];
-    if (gms.contains("r"))
-        cfg.r = gms["r"];
-    if (gms.contains("epsilon"))
-        cfg.epsilon = gms["epsilon"];
-    if (gms.contains("reject_rate"))
-        cfg.reject_rate = gms["reject_rate"];
-    if (gms.contains("k"))
-        cfg.k = gms["k"];
-    if (gms.contains("max_seconds_divisor"))
-        cfg.max_seconds_divisor = gms["max_seconds_divisor"];
-    if (gms.contains("time_limit"))
-        cfg.time_limit = gms["time_limit"];
-    if (gms.contains("t0_block_divisor"))
-        cfg.t0_block_divisor = gms["t0_block_divisor"];
-    return cfg;
-}
-
-GMS_DoubleMatrix_config load_GMS_DoubleMatrix_config_from_json(const json &j)
-{
-    GMS_DoubleMatrix_config cfg;
-    if (!j.contains("GMS_DoubleMatrix"))
-        return cfg;
-    const auto &gdm = j["GMS_DoubleMatrix"];
-    if (gdm.contains("prob_rotate"))
-        cfg.prob_rotate = gdm["prob_rotate"];
-    if (gdm.contains("prob_swap"))
-        cfg.prob_swap = gdm["prob_swap"];
-    if (gdm.contains("prob_move"))
-        cfg.prob_move = gdm["prob_move"];
-    if (gdm.contains("bias_explore_ratio"))
-        cfg.bias_explore_ratio = gdm["bias_explore_ratio"];
-    if (gdm.contains("P"))
-        cfg.P = gdm["P"];
-    if (gdm.contains("r"))
-        cfg.r = gdm["r"];
-    if (gdm.contains("epsilon"))
-        cfg.epsilon = gdm["epsilon"];
-    if (gdm.contains("reject_rate"))
-        cfg.reject_rate = gdm["reject_rate"];
-    if (gdm.contains("k"))
-        cfg.k = gdm["k"];
-    if (gdm.contains("max_seconds_divisor"))
-        cfg.max_seconds_divisor = gdm["max_seconds_divisor"];
-    if (gdm.contains("time_limit"))
-        cfg.time_limit = gdm["time_limit"];
-    if (gdm.contains("t0_block_divisor"))
-        cfg.t0_block_divisor = gdm["t0_block_divisor"];
-    return cfg;
-}
-
 FastSA_config load_FastSA_config_from_json(const json &j)
 {
     FastSA_config cfg;
@@ -3606,93 +1827,10 @@ SawTooth_FastSA_config load_SawTooth_FastSA_config_from_json(const json &j)
     return cfg;
 }
 
-GMS_SawTooth_FastSA_config load_GMS_SawTooth_FastSA_config_from_json(const json &j)
-{
-    GMS_SawTooth_FastSA_config cfg;
-    if (!j.contains("GMS_SawTooth_FastSA"))
-        return cfg;
-    const auto &gst = j["GMS_SawTooth_FastSA"];
-    if (gst.contains("prob_rotate"))
-        cfg.prob_rotate = gst["prob_rotate"];
-    if (gst.contains("prob_swap"))
-        cfg.prob_swap = gst["prob_swap"];
-    if (gst.contains("prob_move"))
-        cfg.prob_move = gst["prob_move"];
-    if (gst.contains("bias_explore_ratio"))
-        cfg.bias_explore_ratio = gst["bias_explore_ratio"];
-    if (gst.contains("REHEAT_DECAY"))
-        cfg.REHEAT_DECAY = gst["REHEAT_DECAY"];
-    if (gst.contains("REHEAT_THRESHOLD"))
-        cfg.REHEAT_THRESHOLD = gst["REHEAT_THRESHOLD"];
-    if (gst.contains("REHEAT_ROLLBACK_RATIO"))
-        cfg.REHEAT_ROLLBACK_RATIO = gst["REHEAT_ROLLBACK_RATIO"];
-    if (gst.contains("P"))
-        cfg.P = gst["P"];
-    if (gst.contains("c"))
-        cfg.c = gst["c"];
-    if (gst.contains("k"))
-        cfg.k = gst["k"];
-    if (gst.contains("max_iter"))
-        cfg.max_iter = gst["max_iter"];
-    if (gst.contains("max_consecutive_reject"))
-        cfg.max_consecutive_reject = gst["max_consecutive_reject"];
-    if (gst.contains("min_temp"))
-        cfg.min_temp = gst["min_temp"];
-    if (gst.contains("sample_size"))
-        cfg.sample_size = gst["sample_size"];
-    if (gst.contains("ewma_alpha"))
-        cfg.ewma_alpha = gst["ewma_alpha"];
-    if (gst.contains("max_seconds_divisor"))
-        cfg.max_seconds_divisor = gst["max_seconds_divisor"];
-    if (gst.contains("t1_amplify"))
-        cfg.t1_amplify = gst["t1_amplify"];
-    if (gst.contains("stagnation_limit"))
-        cfg.stagnation_limit = gst["stagnation_limit"];
-    return cfg;
-}
-
-GMS_FastSA_config load_GMS_FastSA_config_from_json(const json &j)
-{
-    GMS_FastSA_config cfg;
-    if (!j.contains("GMS_FastSA"))
-        return cfg;
-    const auto &gfsa = j["GMS_FastSA"];
-    if (gfsa.contains("prob_rotate"))
-        cfg.prob_rotate = gfsa["prob_rotate"];
-    if (gfsa.contains("prob_swap"))
-        cfg.prob_swap = gfsa["prob_swap"];
-    if (gfsa.contains("prob_move"))
-        cfg.prob_move = gfsa["prob_move"];
-    if (gfsa.contains("bias_explore_ratio"))
-        cfg.bias_explore_ratio = gfsa["bias_explore_ratio"];
-    if (gfsa.contains("P"))
-        cfg.P = gfsa["P"];
-    if (gfsa.contains("c"))
-        cfg.c = gfsa["c"];
-    if (gfsa.contains("k"))
-        cfg.k = gfsa["k"];
-    if (gfsa.contains("max_iter"))
-        cfg.max_iter = gfsa["max_iter"];
-    if (gfsa.contains("max_consecutive_reject"))
-        cfg.max_consecutive_reject = gfsa["max_consecutive_reject"];
-    if (gfsa.contains("min_temp"))
-        cfg.min_temp = gfsa["min_temp"];
-    if (gfsa.contains("sample_size"))
-        cfg.sample_size = gfsa["sample_size"];
-    if (gfsa.contains("ewma_alpha"))
-        cfg.ewma_alpha = gfsa["ewma_alpha"];
-    if (gfsa.contains("max_seconds_divisor"))
-        cfg.max_seconds_divisor = gfsa["max_seconds_divisor"];
-    if (gfsa.contains("t1_amplify"))
-        cfg.t1_amplify = gfsa["t1_amplify"];
-    return cfg;
-}
-
 int main(int argc, char **argv)
 {
     // 默认算法模式
     int algo_mode = 0; // 0: 原始, 1: GMS, ...
-    bool curve_mode = false;
     std::string config_file;
 
     // 1. 扫描所有参数
@@ -3703,10 +1841,6 @@ int main(int argc, char **argv)
         {
             algo_mode = atoi(argv[++i]);
         }
-        else if (strcmp(argv[i], "--curve") == 0 || strcmp(argv[i], "-c") == 0)
-        {
-            curve_mode = true;
-        }
         else if (strcmp(argv[i], "--config") == 0 && i + 1 < argc)
         {
             config_file = argv[++i];
@@ -3716,9 +1850,6 @@ int main(int argc, char **argv)
             args.push_back(argv[i]);
         }
     }
-
-    // 设置全局曲线模式
-    g_curve_mode = curve_mode;
 
     // 2. 检查剩余参数数量 (至少5个: hardblocks, nets, pl, floorplan, ratio)
     if (args.size() < 5)
@@ -3772,11 +1903,6 @@ int main(int argc, char **argv)
 
     BuildInitBtree(); // 随机化建立树
     // InitBtree();
-    // AreaBFSInit();
-    // AreaBasedInitBtree();
-    // AreaDegreeInitBtree();
-    // DegreeBasedInitBtree();
-
 
     // 6. 根据模式调用不同算法
     // 注意：读取文件、构建初始解等公共部分应该提前完成，这里只调用求解函数
@@ -3789,40 +1915,16 @@ int main(int argc, char **argv)
         SimulatedAnnealing(cfg);
         break;
     }
-    case 1: // GMS
-    {
-        GMS_config cfg = load_GMS_config_from_json(j);
-        SimulatedAnnealing_GMS(cfg);
-        break;
-    }
-    case 2: // FastSA
+    case 1: // FastSA
     {
         FastSA_config cfg = load_FastSA_config_from_json(j);
         FastSA(cfg);
         break;
     }
-    case 3: // GMS_FastSA
-    {
-        GMS_FastSA_config cfg = load_GMS_FastSA_config_from_json(j);
-        GMS_FastSA(cfg);
-        break;
-    }
-    case 4: // SawTooth_FastSA
+    case 2: // SawTooth_FastSA
     {
         SawTooth_FastSA_config cfg = load_SawTooth_FastSA_config_from_json(j);
         SawTooth_FastSA(cfg);
-        break;
-    }
-    case 5: // GMS_DoubleMatrix
-    {
-        GMS_DoubleMatrix_config cfg = load_GMS_DoubleMatrix_config_from_json(j);
-        GMS_DoubleMatrix(cfg);
-        break;
-    }
-    case 6: // GMS_SawTooth_FastSA
-    {
-        GMS_SawTooth_FastSA_config cfg = load_GMS_SawTooth_FastSA_config_from_json(j);
-        GMS_SawTooth_FastSA(cfg);
         break;
     }
     default:
