@@ -112,6 +112,10 @@ double COST_ALPHA = 0.2;   // 面积项权重 α
 double COST_BETA = 0.5;    // 线长项权重 β
 double COST_GAMMA = 100.0; // 惩罚项权重 γ
 
+// 轻量性能剖析：累积计时，末尾统一输出一次（避免热路径每次打印刷屏）
+static double g_pack_us = 0.0, g_wl_us = 0.0;
+static long g_pack_cnt = 0, g_wl_cnt = 0;
+
 //------------------------------------------------------------------------
 
 int num_hardblocks, num_terminals; // 定义硬块数量和端点总数
@@ -136,6 +140,7 @@ vector<Node> btree;
 
 // horizontal contour
 vector<int> contour;
+static int g_contour_hi = 0; // 历史最大触及的 x+1，只增不减
 
 bool in_fixed_outline;
 // floorplan with minimum cost
@@ -477,22 +482,46 @@ void BtreePreorderTraverse(int cur_node, bool left)
         BtreePreorderTraverse(btree[cur_node].left_child, true); // 如果当前节点还有左孩子，就递归处理左孩子，并传入 true。这表示左孩子要按“放到父块右边”的规则来算坐标。
     if (btree[cur_node].right_child != -1)
         BtreePreorderTraverse(btree[cur_node].right_child, false);
+
+    if (x_end > g_contour_hi)
+        g_contour_hi = x_end;
 }
 
 // 把当前的 B*-tree 重新“解码”成具体的版图坐标，也就是把树结构转换成每个硬块的 x、y 位置
 void BtreeToFloorplan()
 {
-    contour = vector<int>(max(W * 5, num_hardblocks * 100), 0); // 初始化轮廓线数组。contour[i] 表示 x 位置 i 当前已经被占到的最高 y 值。这里开 W * 5 是给足够大的水平空间，避免越界。
-    // 根节点在最左下角
+    auto _pt0 = std::chrono::steady_clock::now();
+
+    // 一次性按需扩容，之后复用同一块内存（避免每次 new+全量清零）
+    int need = max(W * 5, num_hardblocks * 100);
+    if (need > (int)contour.size())
+    {
+        contour.assign(need, 0);
+    }
+    else
+    {
+        // 只复位历史触及范围 [0, g_contour_hi)，其余列本次不会被读，无需清零
+        for (int i = 0; i < g_contour_hi; i++)
+            contour[i] = 0;
+    }
+    g_contour_hi = 0; // 本包重新统计
+
     hardblocks[root_block].x = 0;
     hardblocks[root_block].y = 0;
     for (int i = 0; i < hardblocks[root_block].width; i++)
-        contour[i] = hardblocks[root_block].height; // 把根块覆盖的水平范围标记起来。也就是说，根块占据了 [[0, width) 这段 x 区间，高度已经被抬到根块的顶端
+        contour[i] = hardblocks[root_block].height;
+    if (hardblocks[root_block].width > g_contour_hi)
+        g_contour_hi = hardblocks[root_block].width;
 
     if (btree[root_block].left_child != -1)
-        BtreePreorderTraverse(btree[root_block].left_child, true); // 如果根有左孩子，就从左孩子开始递归遍历。第二个参数 true 表示这个节点是父节点的左孩子
+        BtreePreorderTraverse(btree[root_block].left_child, true);
     if (btree[root_block].right_child != -1)
-        BtreePreorderTraverse(btree[root_block].right_child, false); // 如果根有右孩子，也递归遍历。第二个参数 false 表示这个节点是父节点的右孩子
+        BtreePreorderTraverse(btree[root_block].right_child, false);
+
+    g_pack_us += std::chrono::duration<double, std::micro>(
+                     std::chrono::steady_clock::now() - _pt0)
+                     .count();
+    g_pack_cnt++;
 }
 
 Cost CalculateCost()
@@ -519,6 +548,7 @@ Cost CalculateCost()
     double R = (double)min(height, width) / max(height, width); // 更新后的R计算方式
 
     // half perimeter wire length   半周长线长
+    auto _pt1 = std::chrono::steady_clock::now();
     double wirelength = 0;              // 初始化半周长线长的累加值。后面会遍历每一条 net，把每条 net 的 HPWL 加到这里。
     for (const vector<int> &net : nets) // 逐条遍历所有 net。net 是当前这条网表里连接的所有 pin 编号。
     {
@@ -557,6 +587,11 @@ Cost CalculateCost()
 
         wirelength += (x_max - x_min) + (y_max - y_min); // 计算HPWL
     }
+    g_wl_us += std::chrono::duration<double, std::micro>(
+                   std::chrono::steady_clock::now() - _pt1)
+                   .count();
+    g_wl_cnt++;
+
     // 将当前的cost存储下来
     Cost c;
     c.width = width;
@@ -2305,6 +2340,14 @@ int main(int argc, char **argv)
         OutputFloorplan(floorplan_file, min_cost.wirelength,
                         min_cost_floorplan,
                         min_cost_btree, min_cost_root_block);
+
+    // ---- 轻量性能剖析汇总（BtreeToFloorplan 打包 vs HPWL 线长）----
+    if (g_pack_cnt > 0)
+        printf("[Perf] BtreeToFloorplan : %9.1f us/call  x %ld calls = %8.1f ms total\n",
+               g_pack_us / g_pack_cnt, g_pack_cnt, g_pack_us / 1000.0);
+    if (g_wl_cnt > 0)
+        printf("[Perf] HPWL 线长         : %9.1f us/call  x %ld calls = %8.1f ms total\n",
+               g_wl_us / g_wl_cnt, g_wl_cnt, g_wl_us / 1000.0);
 
     return 0;
 }

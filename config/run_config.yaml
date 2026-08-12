@@ -8,7 +8,7 @@
 # ---- 电路与基础参数 ----
 circuit: n50 # 使用的电路: n10/n30/n50/n100/n200/n300
 white_space_ratio: 0.1 # 空白率
-num_runs: 1 # 运行次数
+num_runs: 5 # 运行次数
 algo: 2 # 算法模式: 0=原始算法, 1=FastSA, 2=SawToothFastSA
 
 # ---- 微调 (tune) 和绘制 ----
@@ -32,13 +32,16 @@ redraw: false # true=补绘制模式（不重新运行，仅对已有结果绘�
 redraw_output: log/2026_08_12/18-29-42_n100_a1_wsr010_tot1_curve/output # 补绘制的 output 目录相对路径，如 log/2026_08_12/01-09-20_n10_a1_wsr010_tot40/output
 
 # ---- debug模式 ----
-debug_log: true # 是否启用 spdlog 调试日志
+debug_log: false # 是否启用 spdlog 调试日志
+
+# ---- 种子控制 ----
+use_seed: false # 是否使用指定种子文件（配合 seed_file；种子不足补随机、多余取前 N 个）
+seed_file: null # 种子文件路径（use_seed=true 时生效，null=随机生成）
 
 # ---- 文件/路径（通常保持默认）----
 executable: ./bin/hw3_dbg # 可执行文件路径（相对脚本位置）
 output_dir: null # 输出目录（null=自动生成）
 log_file: null # 完整日志文件路径（null=自动生成）
-seed_file: null # 种子文件路径（null=随机生成）
 skip_make: false # 是否跳过 make 编译
 
 draw_nets: false # 绘制 floorplan 时是否叠加网表连线

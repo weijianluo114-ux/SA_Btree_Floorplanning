@@ -612,29 +612,37 @@ def print_statistics_to_console(table_data, algo):
 
 # ========== 种子管理函数 ==========
 
-def load_or_generate_seeds(num_runs: int, seed_file_arg: Optional[str]) -> List[int]:
+def load_or_generate_seeds(num_runs: int, seed_file_arg: Optional[str],
+                           use_seed: bool = False) -> List[int]:
     """
     统一处理种子逻辑：
-    - 如果 seed_file_arg 存在且文件可读，读取之
-    - 否则生成 num_runs 个随机种子（不再写入 seeds/ 文件夹）
+    - 仅当 use_seed=True 且 seed_file_arg 指向的文件存在且可读时，从文件读取种子：
+        * 文件内种子不足 num_runs → 补充随机种子
+        * 文件内种子多于 num_runs → 取前 num_runs 个
+    - 否则生成 num_runs 个随机种子（不写入 seeds/ 文件夹）
     返回种子列表
     """
-    if seed_file_arg is not None:
-        seed_path = Path(seed_file_arg).resolve()
-        if seed_path.exists():
-            print(f"读取种子文件: {seed_path}")
-            with open(seed_path, "r") as sf:
-                seeds = [int(line.strip()) for line in sf if line.strip()]
-            if len(seeds) != num_runs:
-                print(f"警告: 种子文件中的种子数量 ({len(seeds)}) 与实验次数 ({num_runs}) 不匹配，"
-                      f"将使用文件中的前 {num_runs} 个种子")
-                seeds = seeds[:num_runs]
-            while len(seeds) < num_runs:
-                seeds.append(random.randint(0, 2**30 - 1))
-                print(f"补充种子: {seeds[-1]}")
-            return seeds
+    if use_seed:
+        if seed_file_arg is None:
+            print("警告: use_seed=True 但未指定 --seed_file，改用随机种子")
         else:
-            print(f"警告: 种子文件不存在: {seed_path}，改用随机种子")
+            seed_path = Path(seed_file_arg).resolve()
+            if seed_path.exists():
+                print(f"读取种子文件: {seed_path}")
+                with open(seed_path, "r") as sf:
+                    seeds = [int(line.strip()) for line in sf if line.strip()]
+                if len(seeds) != num_runs:
+                    print(f"警告: 种子文件中的种子数量 ({len(seeds)}) 与实验次数 ({num_runs}) 不匹配，"
+                          f"将使用文件中的前 {num_runs} 个种子")
+                    seeds = seeds[:num_runs]
+                while len(seeds) < num_runs:
+                    seeds.append(random.randint(0, 2**30 - 1))
+                    print(f"补充种子: {seeds[-1]}")
+                return seeds
+            else:
+                print(f"警告: use_seed=True 但种子文件不存在: {seed_path}，改用随机种子")
+    else:
+        print("use_seed=False，使用随机种子（忽略 --seed_file）")
 
     # 生成 num_runs 个随机种子（仅本次运行使用，不落盘）
     print(f"生成 {num_runs} 个随机种子...")
@@ -703,7 +711,7 @@ def create_run_dirs(circuit: str, white_space_ratio: float,
     run_dir = date_dir / run_name
 
     # 创建所有子目录
-    for sub in ["output", "figures", "curves"]:
+    for sub in ["output", "figures", "curves", "seeds"]:
         (run_dir / sub).mkdir(parents=True, exist_ok=True)
 
     log_file = run_dir / "run.log"
@@ -753,6 +761,7 @@ def write_config_yaml(run_dir: Path, args: Namespace) -> None:
         "output_dir": str(args.output_dir) if args.output_dir else None,
         "log_file": str(args.log_file) if args.log_file else None,
         "seed_file": str(args.seed_file) if args.seed_file else None,
+        "use_seed": getattr(args, "use_seed", False),
         "config_source": str(getattr(args, "config_path", "")),
         "timestamp": datetime.now().strftime('%Y-%m-%d_%H-%M-%S'),
         "play_snapshots": getattr(args, "play_snapshots", False),
@@ -885,6 +894,9 @@ def run_tuning(args):
     figure_root = tune_log_root / "figures"
     ensure_dir(figure_root)
 
+    seeds_root = tune_log_root / "seeds"
+    ensure_dir(seeds_root)
+
     config_dir = script_dir / "./config"
     ensure_dir(config_dir)
 
@@ -922,8 +934,16 @@ def run_tuning(args):
         output_param_dir = output_dir / folder_name
         ensure_dir(output_param_dir)
 
-        # 每个参数值使用独立的随机种子集（不再写入文件）
-        seeds = load_or_generate_seeds(num_runs_per_value, args.seed_file)
+        # 每个参数值使用独立的随机种子集
+        seeds = load_or_generate_seeds(num_runs_per_value, args.seed_file, args.use_seed)
+
+        # 种子快照：写入 tune_log_root/seeds/<folder_name>/seeds.txt（按参数值分开）
+        seed_snap = seeds_root / folder_name / "seeds.txt"
+        ensure_dir(seed_snap.parent)
+        with open(seed_snap, "w") as sf:
+            for s in seeds:
+                sf.write(f"{s}\n")
+        print(f"种子快照: {seed_snap}")
 
         param_table_data = []
         param_mode_desc = f"调优 {block_name}.{param_name}={param_val}"
@@ -1175,6 +1195,9 @@ def parse_args(argv=None):
                         help="floorplan 输出目录（自动生成前缀）")
     parser.add_argument("--log_file", type=str, default=cfg.get("log_file"),
                         help="完整日志文件路径（原始输出）")
+    parser.add_argument("--use_seed", action=argparse.BooleanOptionalAction,
+                        default=_cfg_value(cfg, "use_seed", False),
+                        help="是否使用指定种子文件（配合 --seed_file；不足补随机、多余取前 N 个）")
     parser.add_argument("--seed_file", type=str, default=cfg.get("seed_file"),
                         help="种子文件路径")
     parser.add_argument("--skip_make", action=argparse.BooleanOptionalAction,
@@ -1303,8 +1326,16 @@ def main():
             args.num_runs = 10
     
     # ===== 种子 =====
-    seeds = load_or_generate_seeds(args.num_runs, args.seed_file)
-            
+    seeds = load_or_generate_seeds(args.num_runs, args.seed_file, args.use_seed)
+
+    # 种子快照：写入 run_dir/seeds/seeds.txt（与 run.log 同级）
+    seed_snap = run_dir / "seeds" / "seeds.txt"
+    ensure_dir(seed_snap.parent)
+    with open(seed_snap, "w") as sf:
+        for s in seeds:
+            sf.write(f"{s}\n")
+    print(f"种子快照: {seed_snap}")
+
     # 准备日志文件（写入头部）
     write_log_header(log_file, hardblocks, nets, terminals, args.white_space_ratio, args.num_runs)
 
