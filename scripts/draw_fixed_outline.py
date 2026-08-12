@@ -306,7 +306,7 @@ def compute_tree_layout(root_id, children):
     return pos
 
 
-def draw_btree(root_id, children, block_names, output_image=None, dpi=300):
+def draw_btree(root_id, children, block_names, output_image=None, dpi=300, snap_title=None):
     """
     绘制 B*-tree（二叉树结构图）。
     block_names: list of str，节点 ID -> 显示名称（如 "sb0", "sb1"）
@@ -343,7 +343,10 @@ def draw_btree(root_id, children, block_names, output_image=None, dpi=300):
 
     ax.set_aspect('auto')
     ax.axis('off')
-    ax.set_title(f"B*-tree (Root: sb{root_id}, Nodes: {len(pos)})")
+    if snap_title:
+        ax.set_title(snap_title)
+    else:
+        ax.set_title(f"B*-tree (Root: sb{root_id}, Nodes: {len(pos)})")
 
     if output_image:
         Path(output_image).parent.mkdir(parents=True, exist_ok=True)
@@ -361,7 +364,7 @@ def draw_btree(root_id, children, block_names, output_image=None, dpi=300):
 def draw_floorplan(blocks, chip_width=None, output_image=None,
                    show_labels=True, dpi=300, algo=0,
                    nets=None, block_dict=None, pin_dict=None,
-                   max_nets_draw=None):
+                   max_nets_draw=None, snap_title=None):
     """
     绘制矩形布局图，并可选择叠加网表连线。
     
@@ -431,10 +434,13 @@ def draw_floorplan(blocks, chip_width=None, output_image=None,
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
 
+    if snap_title:                       # 快照图标注“第几张”，可选
+        ax.set_title(snap_title)
+
     if output_image:
         Path(output_image).parent.mkdir(parents=True, exist_ok=True)
         plt.savefig(output_image, dpi=dpi, bbox_inches='tight')
-        print(f"  Floorplan 图已保存至: {output_image}")
+        # print(f"  Floorplan 图已保存至: {output_image}")
     else:
         plt.show()
     plt.close()
@@ -736,11 +742,28 @@ def main(args=None):
             out_dir = fp_path.parent
         out_dir.mkdir(parents=True, exist_ok=True)
 
+        # ---- 绘制进度计数（由调用方传入 img_done/img_total；单独运行不传则不显示）----
+        img_total = getattr(args, 'img_total', None)
+        img_done  = getattr(args, 'img_done', 0)
+
+        # ---- 快照图标题：标注“第几张”（snap_idx 由调用方传入；单独运行可不传）----
+        snap_idx = getattr(args, 'snap_idx', None)
+        m_iter = re.search(r"_iter(\d+)", fp_path.stem)
+        iter_label = m_iter.group(1) if m_iter else ""
+        snap_title = None
+        if snap_idx is not None:
+            snap_title = f"snap_idx:{snap_idx}" + (f"   iter={iter_label}" if iter_label else "")
+
         # 绘制 Floorplan（外框）
         if getattr(args, 'draw_fp', True):
+            img_done += 1
+            if img_total:
+                print(f"[绘制中 {img_done}/{img_total}] {_clean_stem(fp_path.stem)}_floorplan.png",
+                      flush=True)
             fp_img = out_dir / f"{_clean_stem(fp_path.stem)}_floorplan.png"
             draw_floorplan(blocks, chip_width, output_image=str(fp_img),
-                           show_labels=not args.no_labels, dpi=args.dpi)
+                           show_labels=not args.no_labels, dpi=args.dpi,
+                           snap_title=snap_title)
 
         # 绘制 B-tree（树）
         if getattr(args, 'draw_btree', True):
@@ -752,9 +775,14 @@ def main(args=None):
             if bt_path.exists():
                 root_id, children = parse_btree_file(str(bt_path), num_blocks)
                 if root_id >= 0:
+                    img_done += 1
+                    if img_total:
+                        print(f"[绘制中 {img_done}/{img_total}] {_clean_stem(fp_path.stem)}_btree.png",
+                              flush=True)
                     bt_img = out_dir / f"{_clean_stem(fp_path.stem)}_btree.png"
                     draw_btree(root_id, children, block_names,
-                               output_image=str(bt_img), dpi=args.dpi)
+                               output_image=str(bt_img), dpi=args.dpi,
+                               snap_title=snap_title)
             else:
                 print("未找到对应的 .Btree 文件，跳过树图绘制")
 

@@ -5,23 +5,22 @@
 struct SA_config
 {
     double P = 0.95; // 初始接受概率，用于计算 T0
-    // double r = 0.9;  // 原始(b100)的：算法衰减系数
-    double r = 0.85;           // 温度衰减系数
-    double epsilon = 0.0001;   // 最低温度阈值
+    double r = 0.9;  // 原始(b100)的：算法衰减系数
+    // double r = 0.85;           // 温度衰减系数
+    double epsilon = 1e-4;     // 最低温度阈值
     double reject_rate = 0.99; // 最大拒绝率
     // int k = 20;                // 原始(b100)的：每块试探次数系数 (N = k * num_hardblocks)
     int k = 40; // 每块试探次数系数 (N = k * num_hardblocks)
     // 操作概率 (当前为均匀 rand()%3，可扩展)
     double op_prob[3] = {1.0 / 3, 1.0 / 3, 1.0 / 3};
-    // double t0_block_divisor = 1.0; // 原始(b100)的：T0 = -cost * (n / divisor) / log(P)
-    double t0_block_divisor = 100.0; // T0 = -cost * (n / divisor) / log(P)
-    int time_limit = 1195;           // 总运行时间上限 (秒)
-    int max_seconds_divisor = 5;     // 阶段超时: max_seconds = (n / divisor)^2
+    double t0_block_divisor = 10.0; // T0 = -cost * (n / divisor) / log(P)
+    int time_limit = 1195;          // 总运行时间上限 (秒)
+    int max_seconds_divisor = 5;    // 阶段超时: max_seconds = (n / divisor)^2
 
     // —— 新代价函数权重（Huang et al. 2020 惩罚函数框架）——
-    double alpha = 0.4; // 面积项权重 α
-    double beta = 0.4;  // 线长项权重 β
-    double gamma = 1.0; // 惩罚项权重 γ
+    double alpha = 0.45; // 面积项权重 α
+    double beta = 0.45;  // 线长项权重 β
+    double gamma = 1.0;  // 惩罚项权重 γ
 };
 
 // ========== FastSA 算法配置 ==========

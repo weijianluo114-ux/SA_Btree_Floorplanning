@@ -6,10 +6,10 @@
 #           python test_scripts.py --config my_config.yaml
 # ============================================================
 # ---- 电路与基础参数 ----
-circuit: n100 # 使用的电路: n10/n30/n50/n100/n200/n300
+circuit: n50 # 使用的电路: n10/n30/n50/n100/n200/n300
 white_space_ratio: 0.1 # 空白率
 num_runs: 1 # 运行次数
-algo: 2 # 算法模式: 0=原始算法, 1=FastSA, 2=SawToothFastSA
+algo: 0 # 算法模式: 0=原始算法, 1=FastSA, 2=SawToothFastSA
 
 # ---- 微调 (tune) 和绘制 ----
 tune: false # true=启用微调模式
@@ -18,8 +18,12 @@ draw_btree: false # 是否启用绘制树 (B*-tree)
 draw_curve: false # 是否绘制模拟退火曲线
 
 # ---- 中间布局快照（自动记录 + 绘制）----
-snapshot: true # true=开启：编译 SNAPSHOT_MODE=1，并每隔 snapshot_step 次迭代记录一次当前布局
-snapshot_step: 1000 # 每隔 N 次迭代记录一次（从初始布局开始：1, 1+N, 1+2N, ...）
+snapshot: false # true=开启：编译 SNAPSHOT_MODE=1，并每隔 snapshot_step 次迭代记录一次当前布局
+snapshot_step: 10000 # 每隔 N 次迭代记录一次（从初始布局开始：1, 1+N, 1+2N, ...）
+
+# ---- 快照播放（合成动画 GIF，适合无图形界面的服务器）----
+play_snapshots: false # true=运行后把快照图按迭代号合成可播放的动画 GIF
+snapshot_duration_ms: 500 # 快照动画每帧停留毫秒数
 
 # ---- 补绘制模式 ----
 redraw: false # true=补绘制模式（不重新运行，仅对已有结果绘图）

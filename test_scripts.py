@@ -721,6 +721,8 @@ def write_config_yaml(run_dir: Path, args: Namespace) -> None:
         "seed_file": str(args.seed_file) if args.seed_file else None,
         "config_source": str(getattr(args, "config_path", "")),
         "timestamp": datetime.now().strftime('%Y-%m-%d_%H-%M-%S'),
+        "play_snapshots": getattr(args, "play_snapshots", False),
+        "snapshot_duration_ms": getattr(args, "snapshot_duration_ms", 500),
     }
     with open(config_path, "w") as f:
         yaml.dump(content, f, default_flow_style=False, allow_unicode=True)
@@ -1176,6 +1178,12 @@ def parse_args(argv=None):
     parser.add_argument("--snapshot_step", type=int,
                         default=_cfg_value(cfg, "snapshot_step", 1000),
                         help="每隔 N 次迭代记录一次快照（从初始布局开始：1, 1+N, 1+2N, ...）")
+    parser.add_argument("--play_snapshots", action=argparse.BooleanOptionalAction,
+                        default=_cfg_value(cfg, "play_snapshots", False),
+                        help="运行后把快照图合成可播放的动画 GIF（适合无图形界面的服务器）")
+    parser.add_argument("--snapshot_duration_ms", type=int,
+                        default=_cfg_value(cfg, "snapshot_duration_ms", 500),
+                        help="快照动画每帧停留毫秒数（默认500）")
     args = parser.parse_args(remaining)
     args.config_path = cfg_path
     return args
@@ -1417,7 +1425,10 @@ def main():
             (output_dir / "snapshots").glob("*_iter*.floorplan"),
             key=lambda p: int(p.stem.rsplit("_iter", 1)[1]) if "_iter" in p.stem else 0,
         )
-        for fp in snap_files:
+        n_per_img = int(bool(args.draw_fp)) + int(bool(args.draw_btree))
+        total_img = len(snap_files) * n_per_img   # 总图片数 = 快照数 × 每张快照的图数
+        img_done = 0
+        for snap_idx, fp in enumerate(snap_files, start=1):
             bt = fp.with_suffix(".Btree")
             snap_args = Namespace(
                 floorplan=str(fp),
@@ -1430,9 +1441,28 @@ def main():
                 draw_nets=args.draw_nets,
                 max_nets_draw=args.max_nets_draw,
                 tune=None,
+                img_done=img_done,
+                img_total=total_img,
+                snap_idx=snap_idx,        # ← 新增：第几张
             )
             draw_mod.main(snap_args)
-
+            # 本文件实际画了几张图，就往后推进计数
+            if args.draw_fp:
+                img_done += 1
+            if args.draw_btree and bt.exists():
+                img_done += 1
+            
+    # ---- 快照播放（合成动画 GIF）----
+    if args.play_snapshots:
+        snap_fig_dir = figure_dir / "snapshots"
+        play_mod = _load_scripts_module("play_snapshots")
+        play_args = Namespace(
+            snap_dir=str(snap_fig_dir),
+            out=None,                     # GIF 输出到 snap_fig_dir 内
+            duration=args.snapshot_duration_ms,
+        )
+        play_mod.play(play_args)
+        
     print(f"\n完整日志保存在: {log_file}")
     print("全部完成。")
 

@@ -1024,63 +1024,20 @@ void SimulatedAnnealing(const SA_config &cfg)
             int prev_root_block = root_block;              // 记录当前树的根节点编号。因为后面做 Swap 或 Move 时，根节点有可能变化，所以也要单独备份。
 
             // new----------------------------------------------
-            double op_rand = (double)rand() / RAND_MAX;
-            int M;
-            if (op_rand <= operation_probs[0]) // 旋转操作
-            {
-                // rotate
-                M = 0;
-                // 随机选一个硬块节点 node，然后调用 Rotate 把它宽高交换，也就是块旋转 90 度。
-                int node = rand() % num_hardblocks;
-                Rotate(node);
-            }
-            else if (op_rand <= operation_probs[0] + operation_probs[1]) // 如果随机数是 1，就做 swap 操作。
-            {
-                // swap
-                M = 1;
-                int node1, node2;
-                // 先随机选 node1，再随机选一个和它不同的 node2，然后调用 Swap 交换这两个节点在树中的位置。
-                node1 = rand() % num_hardblocks;
-                do
-                {
-                    node2 = rand() % num_hardblocks;
-                } while (node2 == node1);
-                Swap(node1, node2);
-            }
-            else if (op_rand <= operation_probs[0] + operation_probs[1] + operation_probs[2]) // move 操作
-            {
-                M = 2;
-                // move
-                int node, to_node;
-                // 先随机选一个要移动的节点 node，再随机选一个目标节点 to_node，但要保证
-                // 这样是为了避免形成非法结构或立即构成环。最后调用 Move 把 node 挂到 to_node 下面。
-                node = rand() % num_hardblocks;
-                do
-                {
-                    to_node = rand() % num_hardblocks;
-                } while (to_node == node || btree[node].parent == to_node); // to_node != node      to_node 不能是 node 的父节点
-                Move(node, to_node);
-            }
-            else // 这是兜底分支。按理说前面 rand() % 3 只会得到 0、1、2，所以这里不该进来。如果真的进来了，说明逻辑出了意外，程序直接报错退出。
-            {
-                cout << "[Error] Unspecified Move\n";
-                exit(1);
-            }
-            // new_end----------------------------------------------
-
-            // 这段是在每一轮扰动里，随机选择一种操作：旋转、交换、移动。它对应模拟退火里的“邻域搜索”。
-
-            // int M = rand() % 3; // 随机生成一个 0、1 或 2，用来决定这次要做哪一种操作。
-            // if (M == 0)         // 旋转操作
+            // double op_rand = (double)rand() / RAND_MAX;
+            // int M;
+            // if (op_rand <= operation_probs[0]) // 旋转操作
             // {
             //     // rotate
+            //     M = 0;
             //     // 随机选一个硬块节点 node，然后调用 Rotate 把它宽高交换，也就是块旋转 90 度。
             //     int node = rand() % num_hardblocks;
             //     Rotate(node);
             // }
-            // else if (M == 1) // 如果随机数是 1，就做 swap 操作。
+            // else if (op_rand <= operation_probs[0] + operation_probs[1]) // 如果随机数是 1，就做 swap 操作。
             // {
             //     // swap
+            //     M = 1;
             //     int node1, node2;
             //     // 先随机选 node1，再随机选一个和它不同的 node2，然后调用 Swap 交换这两个节点在树中的位置。
             //     node1 = rand() % num_hardblocks;
@@ -1090,8 +1047,9 @@ void SimulatedAnnealing(const SA_config &cfg)
             //     } while (node2 == node1);
             //     Swap(node1, node2);
             // }
-            // else if (M == 2) // move 操作
+            // else if (op_rand <= operation_probs[0] + operation_probs[1] + operation_probs[2]) // move 操作
             // {
+            //     M = 2;
             //     // move
             //     int node, to_node;
             //     // 先随机选一个要移动的节点 node，再随机选一个目标节点 to_node，但要保证
@@ -1108,6 +1066,48 @@ void SimulatedAnnealing(const SA_config &cfg)
             //     cout << "[Error] Unspecified Move\n";
             //     exit(1);
             // }
+            // new_end----------------------------------------------
+
+            // 这段是在每一轮扰动里，随机选择一种操作：旋转、交换、移动。它对应模拟退火里的“邻域搜索”。
+
+            int M = rand() % 3; // 随机生成一个 0、1 或 2，用来决定这次要做哪一种操作。
+            if (M == 0)         // 旋转操作
+            {
+                // rotate
+                // 随机选一个硬块节点 node，然后调用 Rotate 把它宽高交换，也就是块旋转 90 度。
+                int node = rand() % num_hardblocks;
+                Rotate(node);
+            }
+            else if (M == 1) // 如果随机数是 1，就做 swap 操作。
+            {
+                // swap
+                int node1, node2;
+                // 先随机选 node1，再随机选一个和它不同的 node2，然后调用 Swap 交换这两个节点在树中的位置。
+                node1 = rand() % num_hardblocks;
+                do
+                {
+                    node2 = rand() % num_hardblocks;
+                } while (node2 == node1);
+                Swap(node1, node2);
+            }
+            else if (M == 2) // move 操作
+            {
+                // move
+                int node, to_node;
+                // 先随机选一个要移动的节点 node，再随机选一个目标节点 to_node，但要保证
+                // 这样是为了避免形成非法结构或立即构成环。最后调用 Move 把 node 挂到 to_node 下面。
+                node = rand() % num_hardblocks;
+                do
+                {
+                    to_node = rand() % num_hardblocks;
+                } while (to_node == node || btree[node].parent == to_node); // to_node != node      to_node 不能是 node 的父节点
+                Move(node, to_node);
+            }
+            else // 这是兜底分支。按理说前面 rand() % 3 只会得到 0、1、2，所以这里不该进来。如果真的进来了，说明逻辑出了意外，程序直接报错退出。
+            {
+                cout << "[Error] Unspecified Move\n";
+                exit(1);
+            }
 
             // new----------------------------------------------
 #if CURVE_MODE
@@ -1197,7 +1197,9 @@ void SimulatedAnnealing(const SA_config &cfg)
         // 当且仅当两个条件都满足时继续：
         // 拒绝率 (float)reject/MT 小于等于 0.95（拒绝太多则停止当前退火过程），
         // 当前温度 T 不低于阈值 epsilon（温度过低也会停止）。
-    } while ((float)reject / MT <= reject_rate && T >= epsilon);
+    } while ((float)reject / MT <= reject_rate || T >= epsilon);
+    cout << "退出时的拒绝率是：" << (float)reject / MT << "\n";
+    cout << "温度是：" << T << "\n";
     // 下面表明曾有过以阶段耗时和总运行时间为停止条件的替代退出策略。
     //  } while (seconds < max_seconds && runtime < TIME_LIMIT);
 
@@ -1897,6 +1899,47 @@ static void MakeDirs(const std::string &path)
         mkdir(cur.c_str(), 0755);
 }
 
+// 计算当前 hardblocks 布局的半周长线长（仅用于快照文件头的 Wirelength 信息）
+static double ComputeCurrentWirelength()
+{
+    double wl = 0;
+    for (const vector<int> &net : nets)
+    {
+        int x_min = W + 1, x_max = 0, y_min = W + 1, y_max = 0;
+        for (const int pin : net)
+        {
+            if (pin < num_hardblocks)
+            {
+                int xc = hardblocks[pin].x + hardblocks[pin].width / 2;
+                int yc = hardblocks[pin].y + hardblocks[pin].height / 2;
+                if (xc < x_min)
+                    x_min = xc;
+                if (xc > x_max)
+                    x_max = xc;
+                if (yc < y_min)
+                    y_min = yc;
+                if (yc > y_max)
+                    y_max = yc;
+            }
+            else
+            {
+                const Terminal &t = terminals[pin - num_hardblocks];
+                if (t.x < x_min)
+                    x_min = t.x;
+                if (t.x > x_max)
+                    x_max = t.x;
+                if (t.y < y_min)
+                    y_min = t.y;
+                if (t.y > y_max)
+                    y_max = t.y;
+            }
+        }
+        wl += (x_max - x_min) + (y_max - y_min);
+    }
+    return wl;
+}
+
+// 保存“当前正在探索的布局”（每 N 次扰动后的那一刻），而非全局最优
 void SaveSnapshot(int label)
 {
     if (g_snapshot_step <= 0)
@@ -1922,19 +1965,14 @@ void SaveSnapshot(int label)
     MakeDirs(snap_dir);
 
     std::string fp_out = snap_dir + "/" + base_name + "_iter" + std::to_string(label) + ".floorplan";
-    std::string bt_out = snap_dir + "/" + base_name + "_iter" + std::to_string(label) + ".Btree";
 
-    if (in_fixed_outline)
-        OutputFloorplan(fp_out, min_cost_fixed_outline.wirelength,
-                        min_cost_floorplan_fixed_outline,
-                        min_cost_btree_fixed_outline, min_cost_root_block_fixed_outline,
-                        g_snapshot_fp, g_snapshot_btree);
-    else
-        OutputFloorplan(fp_out, min_cost.wirelength,
-                        min_cost_floorplan, min_cost_btree, min_cost_root_block,
-                        g_snapshot_fp, g_snapshot_btree);
+    // 用当前布局输出，Wirelength 取当前线长
+    OutputFloorplan(fp_out, (int)ComputeCurrentWirelength(),
+                    hardblocks, btree, root_block,
+                    g_snapshot_fp, g_snapshot_btree);
 }
 
+// 迭代号满足 "1, 1+N, 1+2N, ..."（且 >1）时保存快照
 void MaybeSnapshot(long iter)
 {
     if (g_snapshot_step > 0 && iter > 1 && iter % g_snapshot_step == 1)
