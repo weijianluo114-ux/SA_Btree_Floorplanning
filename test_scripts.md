@@ -1,4 +1,3 @@
-
 # test_scripts.py — 批量实验与参数调优脚本
 
 > 本脚本统一了 floorplanning 的批量实验、曲线记录、参数调优和绘图入口。默认会根据 `--circuit` 自动选择 `./testcase/<circuit>.*`，并把结果按日期和时间戳归档到 `log/` 下。

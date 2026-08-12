@@ -88,6 +88,10 @@ def process_single_csv(csv_path, output_dir, suffix, sample_step=100, algo=0,
     output_dir.mkdir(parents=True, exist_ok=True)
     if suffix is None:
         suffix = csv_path.stem   # 如 "curve_data_run1"
+    # 清理冗余前缀/后缀，让图片名更简洁（curve_data_run1_algo0 -> run1_algo0）
+    if suffix.startswith("curve_data_"):
+        suffix = suffix[len("curve_data_"):]
+    suffix = suffix.replace("_curve_data", "", 1)
     print(f"处理 CSV: {csv_path}，输出目录: {output_dir}")
 
     df = pd.read_csv(csv_path)
@@ -102,7 +106,7 @@ def process_single_csv(csv_path, output_dir, suffix, sample_step=100, algo=0,
         # ... 从原 process_single_csv 中提取的代码 ...
         for m in metrics:
             plot_single_metric(df, m, 'Total_Moves', suffix, output_dir,
-                            logy=False, sample_step=sample_step, algo=algo)
+                            logy=True, sample_step=sample_step, algo=algo)
         plot_single_metric(df, 'T', 'Total_Moves', suffix, output_dir,
                         logy=True, sample_step=sample_step, algo=algo)
         plot_all_metrics_subplots(df, 'Total_Moves', suffix, output_dir, algo=algo)
@@ -187,7 +191,7 @@ def plot_single_metric(df, metric, x_col, suffix, output_dir, logy=False, sample
     cbar.set_ticklabels(tick_labels)
     cbar.set_label('Temperature T (log scale)')
 
-    filename = f"{metric}_heatmap_{suffix}.png"
+    filename = f"{metric}_{suffix}.png"
     filepath = output_dir / filename
     plt.savefig(filepath, dpi=DPI, bbox_inches='tight')
     plt.close()
@@ -249,7 +253,7 @@ def plot_all_metrics_subplots(df, x_col, suffix, output_dir, sample_step=100, al
     # plt.tight_layout()   # 注释或删除
 
     # plt.tight_layout()
-    filename = f"all_metrics_heatmap_{suffix}.png"
+    filename = f"all_metrics_{suffix}.png"
     filepath = output_dir / filename
     plt.savefig(filepath, dpi=DPI, bbox_inches='tight')
     plt.close()

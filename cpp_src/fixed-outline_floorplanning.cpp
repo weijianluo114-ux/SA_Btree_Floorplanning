@@ -11,11 +11,16 @@
 
 //----------------new include---------------------------//
 #include "utils.h"
-#include <chrono> // 如果原来没有
+#include "algos_config.h" // 三个算法配置结构体（SA / FastSA / SawTooth_FastSA）
+#include <chrono>         // 如果原来没有
 #include <sstream>
 #include <tuple>
 #include <cstring>
+#include <memory>
 #include "json.hpp" // nlohmann/json
+// spdlog（本地安装于 ~/local）
+#include "spdlog/spdlog.h"
+#include "spdlog/sinks/basic_file_sink.h"
 
 //------------------------------------------------------//
 using json = nlohmann::json;
@@ -27,65 +32,17 @@ using namespace std;
 #define CURVE_MODE 0
 #endif
 
+#ifndef DEBUG_COST_LOG
+#define DEBUG_COST_LOG 0 // 1=用 spdlog 把每次代价分解写入 debug.log；0=关闭
+#endif
+
+#ifndef SNAPSHOT_MODE
+#define SNAPSHOT_MODE 0 // 1=编译中间布局快照功能
+#endif
+
 //======================================================//
 
 // --------------------- new struct ------------------------//
-//  ========== SA 算法配置 ==========
-struct SA_config
-{
-    double P = 0.95; // 初始接受概率，用于计算 T0
-    // double r = 0.9;  // 原始(b100)的：算法衰减系数
-    double r = 0.85;           // 温度衰减系数
-    double epsilon = 0.0001;   // 最低温度阈值
-    double reject_rate = 0.99; // 最大拒绝率
-    // int k = 20;                // 原始(b100)的：每块试探次数系数 (N = k * num_hardblocks)
-    int k = 40; // 每块试探次数系数 (N = k * num_hardblocks)
-    // 操作概率 (当前为均匀 rand()%3，可扩展)
-    double op_prob[3] = {1.0 / 3, 1.0 / 3, 1.0 / 3};
-    // double t0_block_divisor = 1.0; // 原始(b100)的：T0 = -cost * (n / divisor) / log(P)
-    double t0_block_divisor = 100.0; // T0 = -cost * (n / divisor) / log(P)
-    int time_limit = 1195;           // 总运行时间上限 (秒)
-    int max_seconds_divisor = 5;     // 阶段超时: max_seconds = (n / divisor)^2
-};
-
-// ========== FastSA 算法配置 ==========
-struct FastSA_config
-{
-    double t1_amplify = 100.0;         // T1 放大系数: T1 = t1_amplify * |Δavg / ln(P)|
-    double P = 0.95;                   // 初始接受概率，用于计算 T1
-    double c = 100.0;                  // 论文推荐 c=100
-    int k = 7;                         // 论文推荐 k=7
-    int max_iter = 200000;             // 最大迭代次数（安全上限）
-    int max_consecutive_reject = 5000; // 连续拒绝阈值
-    double min_temp = 1e-9;            // 最低温度阈值
-    int sample_size = 1000;            // 预采样大小
-    double ewma_alpha = 0.4;           // EWMA 平滑系数
-    int max_seconds_divisor = 5.0;     // 阶段超时: max_seconds = (n / divisor)^2
-};
-
-// ========== SawTooth_FastSA 算法配置 ==========
-struct SawTooth_FastSA_config
-{
-    double t1_amplify = 100.0;
-
-    // ——— 新增 ———
-    int stagnation_limit = 250; // 连续无改进的迭代次数阈值，触发回火
-
-    // 新参数定义
-    double REHEAT_DECAY = 0.9;          // 回火幅度衰减
-    int REHEAT_THRESHOLD = 100;         // 连续拒绝阈值
-    double REHEAT_ROLLBACK_RATIO = 0.6; // 回火时 n 回退比例
-
-    double P = 0.95;                   // 初始接受概率，用于计算 T1
-    double c = 100.0;                  // 论文推荐 c=100
-    int k = 7;                         // 论文推荐 k=7
-    int max_iter = 200000;             // 最大迭代次数（安全上限）
-    int max_consecutive_reject = 5000; // 连续拒绝阈值
-    double min_temp = 1e-9;            // 最低温度阈值
-    int sample_size = 1000;            // 预采样大小
-    double ewma_alpha = 0.4;           // EWMA 平滑系数
-    int max_seconds_divisor = 5.0;     // 阶段超时: max_seconds = (n / divisor)^2
-};
 
 typedef struct hardblock
 {
@@ -131,6 +88,30 @@ u_int32_t T_reject = 0; // 某个温度下拒绝了多少次“更差”的解�
 #endif
 double T;
 
+#if DEBUG_COST_LOG
+// spdlog 文件日志（输出到 run_dir/debug.log，与 run.log 同级）
+std::shared_ptr<spdlog::logger> g_debug_logger;
+#endif
+
+#if SNAPSHOT_MODE
+// 前置声明：中间布局快照（定义在文件后部 OutputFloorplan 之后）
+void SaveSnapshot(int label);
+void MaybeSnapshot(long iter);
+#endif
+
+// 新增：中间布局快照（编译期 SNAPSHOT_MODE 控制；运行参数在 main 里解析）
+std::string g_floorplan_file; // 当前运行输出 floorplan 路径（供快照命名）
+int g_snapshot_step = 0;      // 每隔 N 次迭代记录一次（0=关闭）
+bool g_snapshot_fp = true;    // 是否记录 .floorplan
+bool g_snapshot_btree = true; // 是否记录 .Btree
+
+// 新增：宽长比归一化基准 AR*（初始解的 (1 - R)，见 CalculateCost 内注释）
+double ar_norm = 0;
+// 新增：当前使用的代价权重（在三个算法函数入口处根据配置赋值）
+double COST_ALPHA = 0.2;   // 面积项权重 α
+double COST_BETA = 0.5;    // 线长项权重 β
+double COST_GAMMA = 100.0; // 惩罚项权重 γ
+
 //------------------------------------------------------------------------
 
 int num_hardblocks, num_terminals; // 定义硬块数量和端点总数
@@ -145,6 +126,7 @@ double total_block_area; // 总硬块面积，即所有块加起来的面积和
 double area_target;
 // area, wire length normalization = initial area, wirelength
 double area_norm = 0, wl_norm = 0;
+
 // fixed outline max x coordinate
 int W;
 
@@ -280,6 +262,71 @@ void ReadTerminalsFile(string terminals_file)
     }
 
     file.close();
+}
+
+// ========== 算法：限制层宽 B*-tree 初始化布图（InitialFloorplan） ==========
+// 在宽度限制 limit_width 下构造初始树：
+//   - 左孩子：同一层（水平相邻，BtreePreorderTraverse 中 left==true 放到父块右侧）
+//   - 右孩子：开启新层（垂直堆叠，BtreePreorderTraverse 中 right==false 与父块 x 对齐）
+// 注意：limit_width 需大于所有模块宽度，否则摆放会失败。
+void InitBtreeWithLimit(double limit_width)
+{
+#ifdef DEBUG
+    ScopedTimer t("BuildInitBtree");
+#endif
+    btree = vector<Node>(num_hardblocks);
+    vector<int> pending(num_hardblocks); // B0：待插入模块集合
+    for (int i = 0; i < num_hardblocks; i++)
+        pending[i] = i;
+
+    // 前置约束检查：宽度限制必须大于所有模块宽度
+    for (int i = 0; i < num_hardblocks; i++)
+        if (hardblocks[i].width > limit_width)
+            cerr << "[警告] 模块 " << i << " 宽度 " << hardblocks[i].width
+                 << " 超过宽度限制 " << limit_width << "，初始化布图可能失败\n";
+
+    // (2) 第2行：随机选取根节点
+    int root_pos = rand() % (int)pending.size();
+    root_block = pending[root_pos];
+    pending.erase(pending.begin() + root_pos);
+    btree[root_block].parent = -1;
+    btree[root_block].left_child = -1;
+    btree[root_block].right_child = -1;
+
+    // (2) 第3行：left_node / right_node 记录下次插入的位置
+    int left_node = root_block;                        // 当前层最后插入的节点（左孩子挂载点）
+    int right_node = root_block;                       // 最近一次开启新层的节点（右孩子挂载点）
+    double layer_width = hardblocks[root_block].width; // 当前层已占宽度（根所在层）
+
+    // (3) 第4-16行：逐个插入模块
+    while (!pending.empty())
+    {
+        int pos = rand() % (int)pending.size(); // 第5行：随机选取模块，保证多次初始化差异
+        int node = pending[pos];
+        pending.erase(pending.begin() + pos); // 第15行：从 B0 去除 bi（等价于加入 B1）
+
+        btree[node].left_child = -1;
+        btree[node].right_child = -1;
+
+        if (layer_width + hardblocks[node].width <= limit_width) // 第6行：当前层未超出宽度限制
+        {
+            // 第7-8行：插入为 left_node 的左孩子，并更新层宽
+            btree[node].parent = left_node;
+            btree[left_node].left_child = node;
+            layer_width += hardblocks[node].width;
+        }
+        else // 第9行：当前层超出限制，在下一层插入
+        {
+            // 第10-12行：插入为 right_node 的右孩子，开启新层
+            btree[node].parent = right_node;
+            btree[right_node].right_child = node;
+            right_node = node;                    // 第11行：更新下次插入右孩子的位置
+            layer_width = hardblocks[node].width; // 第12行：层宽重置为新层第一个模块宽度
+        }
+
+        left_node = node; // 第14行：更新下次插入左孩子的位置
+    }
+    // 第17-18行：Pack 摆放（确定 y 坐标）由 BtreeToFloorplan / CalculateCost 完成
 }
 
 void BuildInitBtree() // 更随机，更像纯拓扑初始化。
@@ -523,30 +570,103 @@ Cost CalculateCost()
     // 第一次进入这里时，把当前 floorplan 的面积记录为基准值 area_norm。
     // 这样后面所有面积代价都相当于“相对初始解的倍数”
     if (area_norm == 0)
-        area_norm = floorplan_area;
+        area_norm = area_target;
+    // area_norm = sqrt(floorplan_area * area_target);
     if (wl_norm == 0)
         wl_norm = wirelength; // 第一次进入这里时，把当前线长记录为基准值 wl_norm。后面线长代价也会按这个基准来归一化。
+    // 新增：宽长比归一化基准 AR* = 1 - R_initial（使初始解该项恰好为 1）
+    // if (ar_norm == 0)
+    //     ar_norm = max((1.0 - R), 1e-6);
 
     double area_cost = c.area / area_norm;   // 计算面积代价。如果当前面积和初始面积一样，这项就是 1；如果更大，就大于 1
     double wl_cost = c.wirelength / wl_norm; // 计算线长代价，和面积代价一样，也是相对初始值的比例
-    double R_cost = (1 - R) * (1 - R);       // 计算长宽比惩罚。这里希望 R 尽量接近 1，也就是版图尽量接近正方形；偏离 1 越多，惩罚越大
+    double R_cost = fabs(1.0 - R);           // 计算长宽比惩罚。这里希望 R 尽量接近 1，也就是版图尽量接近正方形；偏离 1 越多，惩罚越大
+    // double R_cost = (1.0 - R) / ar_norm;     // 计算长宽比惩罚。这里希望 R 尽量接近 1，也就是版图尽量接近正方形；偏离 1 越多，惩罚越大
+
+    // 全局面积违规 A'（公式 11，固定轮廓为正方形，W0 = H0 = W）
+    double A_prime = 0.0;
+    if (height <= W && width <= W)
+        A_prime = 0.0;
+    else if (height <= W && width > W)
+        A_prime = (double)(width - W) * W; // (W' - W0) * H0
+    else if (width <= W && height > W)
+        A_prime = (double)(height - W) * W; // (H' - H0) * W0
+    else
+        A_prime = (double)width * height - (double)W * W; // W'*H' - W0*H0
+
+    // 单模块超额长度违规 L'（公式 12、13）
+    double L_prime = 0.0;
+    for (int i = 0; i < num_hardblocks; i++)
+    {
+        int x_r = hardblocks[i].x + hardblocks[i].width;
+        int y_t = hardblocks[i].y + hardblocks[i].height;
+        if (y_t <= W && x_r <= W)
+            continue; // 未越界
+        else if (y_t <= W && x_r > W)
+        {
+            double dx = x_r - W;
+            L_prime += dx * dx;
+        }
+        else if (x_r <= W && y_t > W)
+        {
+            double dy = y_t - W;
+            L_prime += dy * dy;
+        }
+        else
+        {
+            double dx = x_r - W;
+            double dy = y_t - W;
+            L_prime += dx * dx + dy * dy;
+        }
+    }
+
+    double phi = A_prime + L_prime;                 // Φ = A' + L'
+    double phi_star = 0.21 * (double)W * (double)W; // Φ* = 0.21*(W0*H0) = 0.21*W²
+    double penalty_cost = phi / phi_star;           // 惩罚归一化项
+
     // 先把宽和高的越界惩罚初始化为 0，默认不惩罚。
-    double width_penalty = 0;
-    double height_penalty = 0;
+    // double width_penalty = 0;
+    // double height_penalty = 0;
     // if (width > W) // 如果当前版图宽度超过固定边界 W，就加宽度惩罚。超得越多，这项越大。
     //     width_penalty = ((double)width / W);
     // if (height > W)
     //     height_penalty = ((double)height / W);
-    if (width > W) // 如果当前版图宽度超过固定边界 W，就加宽度惩罚。超得越多，这项越大。
-        width_penalty = ((double)width / W);
-    if (height > W)
-        height_penalty = ((double)height / W);
+    // if (width > W) // 如果当前版图宽度超过固定边界 W，就加宽度惩罚。超得越多，这项越大。
+    //     width_penalty = ((double)width / W);
+    // if (height > W)
+    //     height_penalty = ((double)height / W);
     // c.cost = area_cost + wl_cost + R_cost + width_penalty + height_penalty; // （原来）把所有代价项加起来，得到最终总成本。模拟退火后面就是用这个 c.cost 来判断当前布局好不好、要不要接受
-    // new
-    double area_weight = 0.0;
-    double wl_weight = 0.4 - area_weight;
-    c.cost = area_weight * area_cost + wl_weight * wl_cost + (0.5 - area_weight - wl_weight) * R_cost + 0.25 * width_penalty + 0.25 * height_penalty; // （更改后）把所有代价项加起来，得到最终总成本。模拟退火后面就是用这个 c.cost 来判断当前布局好不好、要不要接受
-    // new
+
+    // double area_weight = 0.0;
+    // double wl_weight = 0.4 - area_weight;
+    // c.cost = area_weight * area_cost + wl_weight * wl_cost + (0.5 - area_weight - wl_weight) * R_cost + 0.25 * width_penalty + 0.25 * height_penalty; // （更改后）把所有代价项加起来，得到最终总成本。模拟退火后面就是用这个 c.cost 来判断当前布局好不好、要不要接受
+
+    double alpha = COST_ALPHA;
+    double beta = COST_BETA;
+    double gamma = COST_GAMMA;
+    c.cost = alpha * area_cost + beta * wl_cost + (1.0 - alpha - beta) * R_cost + gamma * penalty_cost;
+
+    // ---- spdlog: 记录本次代价计算分解（输出到 debug.log）----
+#if DEBUG_COST_LOG
+    if (g_debug_logger)
+    {
+#if CURVE_MODE
+        u_int32_t dbg_total = Total_Moves, dbg_t = T_Moves;
+#else
+        u_int32_t dbg_total = 0, dbg_t = 0;
+#endif
+        g_debug_logger->info(
+            "Total_Moves={} | "
+            "area_cost={:.6f} wl_cost={:.6f} R_cost={:.6f} | "
+            "A_prime={:.6f} L_prime={:.6f} | "
+            "phi={:.6f} phi_star={:.6f} penalty_cost={:.6f} | cost={:.6f}",
+            dbg_total,
+            area_cost, wl_cost, R_cost,
+            A_prime, L_prime,
+            phi, phi_star, penalty_cost, c.cost);
+    }
+#endif
+    // ---- end spdlog ----
 
 // new--------------------------------
 #if CURVE_MODE // 注意，以下会把每一次扰动的结果都记录下来，可能非常耗时
@@ -842,6 +962,11 @@ void SimulatedAnnealing(const SA_config &cfg)
 #endif
     // new_end----------------------------------------------
 
+    // —— 使用配置中的代价权重（须在首次 CalculateCost 之前设置）——
+    COST_ALPHA = cfg.alpha;
+    COST_BETA = cfg.beta;
+    COST_GAMMA = cfg.gamma;
+
     min_cost = CalculateCost();      // 先调用 CalculateCost 计算当前树对应的版图代价、宽高、面积、线长等，并把结果存进min_cost
     min_cost_floorplan = hardblocks; // 把当前这一版硬块布局复制到 min_cost_floorplan 里。hardblocks 里存的是每个块当前的坐标、宽高、旋转状态，所以这一步相当于把当前解的具体布局快照保存下来
 
@@ -855,6 +980,9 @@ void SimulatedAnnealing(const SA_config &cfg)
     const double *operation_probs = cfg.op_prob;
     // 初始温度。这个公式是根据“初始时差解接受概率约为 P”反推出来的。min_cost.cost 越大，初温越高；num_hardblocks 越多，初温也越高。
     const double T0 = -min_cost.cost * num_hardblocks / (cfg.t0_block_divisor) / log(P);
+
+    cout << "SA:T0温度为:" << T0 << "\n";
+
     const int max_seconds = (num_hardblocks / cfg.max_seconds_divisor) * (num_hardblocks / cfg.max_seconds_divisor); // 一个按规模变化的阶段时间上限。块越多，这个值越大，允许搜索的单阶段时间越长。
     // const int max_seconds = 200;     // 一个按规模变化的阶段时间上限。块越多，这个值越大，允许搜索的单阶段时间越长。
     const int TIME_LIMIT = cfg.time_limit; // 20 minutes    总运行时间上限，约等于 20 分钟减 5 秒缓冲。避免程序跑太久。
@@ -1091,8 +1219,21 @@ void FastSA(const FastSA_config &cfg)
 #endif
     // new_end----------------------------------------------
 
+    // —— 使用配置中的代价权重（须在首次 CalculateCost 之前设置）——
+    COST_ALPHA = cfg.alpha;
+    COST_BETA = cfg.beta;
+    COST_GAMMA = cfg.gamma;
+
     min_cost = CalculateCost();
     min_cost_floorplan = hardblocks;
+
+    // ★ 修复：初始快照需要完整的全局最优记录，否则 SaveSnapshot 访问空 min_cost_btree 会段错误
+    min_cost_root_block = root_block;
+    min_cost_btree = btree;
+
+#if SNAPSHOT_MODE
+    SaveSnapshot(1); // 第 1 张：初始布局
+#endif
 
     // ==================== FASTSA 参数 ====================
     const double P = cfg.P;                                        // 初始接受概率
@@ -1171,6 +1312,7 @@ void FastSA(const FastSA_config &cfg)
     double avg_delta_cost = delta_avg; // 平均代价变化（EWMA）
     // new-------------------------------------------------
     T = T1; // 当前温度
+    cout << "FastSA:T1温度为:" << T1 << "\n";
     // new_end----------------------------------------------
     Cost prev_cost = min_cost; // 当前接受解的成本
     in_fixed_outline = false;
@@ -1290,6 +1432,8 @@ void FastSA(const FastSA_config &cfg)
                 }
                 else
                 {
+                    // 第一次进入固定外框：记录此时的迭代次数 iter 并输出
+                    cout << "第一次进入固定外框时的 iter = " << iter << "\n";
                     in_fixed_outline = true;
                     min_cost_root_block_fixed_outline = root_block;
                     min_cost_fixed_outline = cur_cost;
@@ -1322,20 +1466,26 @@ void FastSA(const FastSA_config &cfg)
                 hardblocks = hardblocks_temp;
             else
                 btree = btree_temp;
-            // CalculateCost();
         }
 
         iter++;
+#if SNAPSHOT_MODE
+        MaybeSnapshot(iter);
+#endif
 
         // ---------- 主动停止条件 ----------
         // 条件1：连续拒绝次数过多且温度很低（类似原算法的拒绝率很高且温度低）
         if (consecutive_reject >= MAX_CONSECUTIVE_REJECT && T <= MIN_TEMP)
         {
+            cout << "连续拒绝次数过多且温度很低而退出\n";
+            cout << "consecutive_reject是" << consecutive_reject << "\n";
+            cout << "T是" << T << "\n";
             break;
         }
         // 条件2：达到最大迭代次数（安全上限）
         if (iter >= MAX_ITER)
         {
+            cout << "达到最大迭代次数而退出\n";
             break;
         }
     }
@@ -1362,8 +1512,20 @@ void SawTooth_FastSA(const SawTooth_FastSA_config &cfg)
 #endif
     // new_end----------------------------------------------
 
+    // —— 使用配置中的代价权重（须在首次 CalculateCost 之前设置）——
+    COST_ALPHA = cfg.alpha;
+    COST_BETA = cfg.beta;
+    COST_GAMMA = cfg.gamma;
+
     min_cost = CalculateCost();
     min_cost_floorplan = hardblocks;
+    // ★ 修复：初始快照需要完整的全局最优记录，否则 SaveSnapshot 访问空 min_cost_btree 会段错误
+    min_cost_root_block = root_block;
+    min_cost_btree = btree;
+
+#if SNAPSHOT_MODE
+    SaveSnapshot(1); // 第 1 张：初始布局
+#endif
 
     // ==================== FASTSA 参数 ====================
     // 参数定义
@@ -1449,6 +1611,7 @@ void SawTooth_FastSA(const SawTooth_FastSA_config &cfg)
     int last_improve_iter = 0;         // 记录最近一次改进时的迭代号
     // new-------------------------------------------------
     T = T1; // 当前温度
+    cout << "SawTooth:T1温度为:" << T1 << "\n";
     // new_end----------------------------------------------
     Cost prev_cost = min_cost; // 当前接受解的成本
     in_fixed_outline = false;
@@ -1601,6 +1764,8 @@ void SawTooth_FastSA(const SawTooth_FastSA_config &cfg)
                 }
                 else
                 {
+                    // 第一次进入固定外框：记录此时的迭代次数 iter 并输出
+                    cout << "第一次进入固定外框时的 iter = " << iter << "\n";
                     in_fixed_outline = true;
                     min_cost_root_block_fixed_outline = root_block;
                     min_cost_fixed_outline = cur_cost;
@@ -1634,21 +1799,27 @@ void SawTooth_FastSA(const SawTooth_FastSA_config &cfg)
                 hardblocks = hardblocks_temp;
             else
                 btree = btree_temp;
-            // CalculateCost();
         }
 
         iter++;
+#if SNAPSHOT_MODE
+        MaybeSnapshot(iter);
+#endif
         // temp_n++;
         temp_n += reheat_plus;
         // ---------- 主动停止条件 ----------
         // 条件1：连续拒绝次数过多且温度很低（类似原算法的拒绝率很高且温度低）
         if (consecutive_reject >= MAX_CONSECUTIVE_REJECT && T <= MIN_TEMP)
         {
+            cout << "连续拒绝次数过多且温度很低而退出\n";
+            cout << "consecutive_reject是" << consecutive_reject << "\n";
+            cout << "T是" << T << "\n";
             break;
         }
         // 条件2：达到最大迭代次数（安全上限）
         if (iter >= MAX_ITER)
         {
+            cout << "达到最大迭代次数而退出\n";
             break;
         }
     }
@@ -1660,48 +1831,116 @@ void SawTooth_FastSA(const SawTooth_FastSA_config &cfg)
     PrintAndVerifyResult();
 }
 
-// 这个函数的作用是把当前版图结果写到输出文件里，格式包括总线长和每个硬块的坐标、尺寸、是否旋转
 void OutputFloorplan(string output_file, int wirelength, vector<HardBlock> &hb,
-                     const vector<Node> &bt, int root_id)
+                     const vector<Node> &bt, int root_id,
+                     bool write_fp = true, bool write_btree = true)
 {
     // ---- 输出 .floorplan 文件 ----
-    ofstream file;
-    file.open(output_file);
-
-    file << "W:" << W << '\n';
-    file << "Wirelength " << ":" << wirelength << '\n';
-    file << "Blocks" << ":" << num_hardblocks << '\n';
-
-    for (int i = 0; i < num_hardblocks; i++)
+    if (write_fp)
     {
-        if (hb[i].rotate)
-            file << "sb" << i << " " << hb[i].x << " " << hb[i].y << " "
-                 << hb[i].height << " " << hb[i].width << " 1\n";
+        ofstream file;
+        file.open(output_file);
+        file << "W:" << W << '\n';
+        file << "Wirelength " << ":" << wirelength << '\n';
+        file << "Blocks" << ":" << num_hardblocks << '\n';
+        for (int i = 0; i < num_hardblocks; i++)
+        {
+            if (hb[i].rotate)
+                file << "sb" << i << " " << hb[i].x << " " << hb[i].y << " "
+                     << hb[i].height << " " << hb[i].width << " 1\n";
+            else
+                file << "sb" << i << " " << hb[i].x << " " << hb[i].y << " "
+                     << hb[i].width << " " << hb[i].height << " 0\n";
+        }
+        file.close();
+    }
+
+    // ---- 输出 .Btree 文件 ----
+    if (write_btree)
+    {
+        string btree_file = output_file;
+        size_t dot_pos = btree_file.rfind(".floorplan");
+        if (dot_pos != string::npos)
+            btree_file = btree_file.substr(0, dot_pos) + ".Btree";
         else
-            file << "sb" << i << " " << hb[i].x << " " << hb[i].y << " "
-                 << hb[i].width << " " << hb[i].height << " 0\n";
-    }
-    file.close();
+            btree_file += ".Btree";
 
-    // ---- 输出 .Btree 文件（新增）----
-    // 将 output_file 的后缀从 .floorplan 替换为 .Btree
-    string btree_file = output_file;
-    size_t dot_pos = btree_file.rfind(".floorplan");
-    if (dot_pos != string::npos)
-        btree_file = btree_file.substr(0, dot_pos) + ".Btree";
-    else
-        btree_file += ".Btree";
-
-    ofstream bf;
-    bf.open(btree_file);
-    bf << "Root: " << root_id << '\n';
-    for (int i = 0; i < num_hardblocks; i++)
-    {
-        bf << i << " " << bt[i].parent << " "
-           << bt[i].left_child << " " << bt[i].right_child << '\n';
+        ofstream bf;
+        bf.open(btree_file);
+        bf << "Root: " << root_id << '\n';
+        for (int i = 0; i < num_hardblocks; i++)
+        {
+            bf << i << " " << bt[i].parent << " "
+               << bt[i].left_child << " " << bt[i].right_child << '\n';
+        }
+        bf.close();
     }
-    bf.close();
 }
+
+#if SNAPSHOT_MODE
+#include <sys/stat.h> // mkdir（创建快照子目录）
+
+// 递归创建目录（POSIX）
+static void MakeDirs(const std::string &path)
+{
+    std::string cur;
+    for (size_t i = 0; i < path.size(); i++)
+    {
+        if (path[i] == '/')
+        {
+            if (!cur.empty())
+                mkdir(cur.c_str(), 0755);
+        }
+        cur += path[i];
+    }
+    if (!cur.empty())
+        mkdir(cur.c_str(), 0755);
+}
+
+void SaveSnapshot(int label)
+{
+    if (g_snapshot_step <= 0)
+        return;
+    size_t dot = g_floorplan_file.rfind(".floorplan");
+    std::string stem = (dot != std::string::npos) ? g_floorplan_file.substr(0, dot)
+                                                  : g_floorplan_file;
+
+    // ---- 快照统一存到 <output>/snapshots/ 子文件夹，output/ 只放最终结果 ----
+    size_t slash = stem.rfind('/');
+    std::string snap_dir;
+    std::string base_name;
+    if (slash != std::string::npos)
+    {
+        snap_dir = stem.substr(0, slash) + "/snapshots";
+        base_name = stem.substr(slash + 1);
+    }
+    else
+    {
+        snap_dir = "snapshots";
+        base_name = stem;
+    }
+    MakeDirs(snap_dir);
+
+    std::string fp_out = snap_dir + "/" + base_name + "_iter" + std::to_string(label) + ".floorplan";
+    std::string bt_out = snap_dir + "/" + base_name + "_iter" + std::to_string(label) + ".Btree";
+
+    if (in_fixed_outline)
+        OutputFloorplan(fp_out, min_cost_fixed_outline.wirelength,
+                        min_cost_floorplan_fixed_outline,
+                        min_cost_btree_fixed_outline, min_cost_root_block_fixed_outline,
+                        g_snapshot_fp, g_snapshot_btree);
+    else
+        OutputFloorplan(fp_out, min_cost.wirelength,
+                        min_cost_floorplan, min_cost_btree, min_cost_root_block,
+                        g_snapshot_fp, g_snapshot_btree);
+}
+
+void MaybeSnapshot(long iter)
+{
+    if (g_snapshot_step > 0 && iter > 1 && iter % g_snapshot_step == 1)
+        SaveSnapshot((int)iter);
+}
+#endif
 
 unsigned int GetRandomSeed()
 {
@@ -1730,6 +1969,41 @@ unsigned int GetRandomSeed()
     return time(NULL);
 }
 
+#if DEBUG_COST_LOG
+// 根据 floorplan 输出路径推导 run_dir（run.log 同级目录），并初始化 spdlog 文件日志
+std::string GetDebugLogPath(const std::string &floorplan_file)
+{
+    // floorplan_file 形如: <run_dir>/output/run1_xxx.floorplan
+    // 向上两级得到 run_dir，debug.log 与 run.log 放一起
+    size_t pos = floorplan_file.rfind('/');
+    std::string output_dir = (pos == std::string::npos) ? "." : floorplan_file.substr(0, pos);
+    size_t pos2 = output_dir.rfind('/');
+    std::string run_dir = (pos2 == std::string::npos) ? output_dir : output_dir.substr(0, pos2);
+    return run_dir + "/debug.log";
+}
+
+void InitDebugLogger(const std::string &floorplan_file)
+{
+    try
+    {
+        std::string path = GetDebugLogPath(floorplan_file);
+        // truncate=true：每次进程运行重新写一份（文件大小可控）；想追加可改为 false
+        g_debug_logger = spdlog::basic_logger_mt("debug_logger", path, /*truncate=*/true);
+        g_debug_logger->set_level(spdlog::level::info);
+        g_debug_logger->set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%l] %v");
+        g_debug_logger->info("===== debug log (spdlog) =====");
+        g_debug_logger->info("floorplan : {}", floorplan_file);
+        g_debug_logger->info("==============================");
+        std::cout << "Debug log -> " << path << std::endl;
+    }
+    catch (const spdlog::spdlog_ex &e)
+    {
+        std::cerr << "[spdlog] 初始化失败: " << e.what() << std::endl;
+        g_debug_logger = nullptr;
+    }
+}
+#endif
+
 // ========== JSON 配置加载函数 ==========
 
 SA_config load_SA_config_from_json(const json &j)
@@ -1757,6 +2031,13 @@ SA_config load_SA_config_from_json(const json &j)
     if (sa.contains("op_prob") && sa["op_prob"].is_array() && sa["op_prob"].size() == 3)
         for (int i = 0; i < 3; ++i)
             cfg.op_prob[i] = sa["op_prob"][i];
+
+    if (sa.contains("alpha"))
+        cfg.alpha = sa["alpha"];
+    if (sa.contains("beta"))
+        cfg.beta = sa["beta"];
+    if (sa.contains("gamma"))
+        cfg.gamma = sa["gamma"];
     return cfg;
 }
 
@@ -1786,6 +2067,13 @@ FastSA_config load_FastSA_config_from_json(const json &j)
         cfg.max_seconds_divisor = fsa["max_seconds_divisor"];
     if (fsa.contains("t1_amplify"))
         cfg.t1_amplify = fsa["t1_amplify"];
+
+    if (fsa.contains("alpha"))
+        cfg.alpha = fsa["alpha"];
+    if (fsa.contains("beta"))
+        cfg.beta = fsa["beta"];
+    if (fsa.contains("gamma"))
+        cfg.gamma = fsa["gamma"];
     return cfg;
 }
 
@@ -1824,6 +2112,13 @@ SawTooth_FastSA_config load_SawTooth_FastSA_config_from_json(const json &j)
     // ——— 新增 ———
     if (stfsa.contains("stagnation_limit"))
         cfg.stagnation_limit = stfsa["stagnation_limit"];
+
+    if (stfsa.contains("alpha"))
+        cfg.alpha = stfsa["alpha"];
+    if (stfsa.contains("beta"))
+        cfg.beta = stfsa["beta"];
+    if (stfsa.contains("gamma"))
+        cfg.gamma = stfsa["gamma"];
     return cfg;
 }
 
@@ -1845,6 +2140,18 @@ int main(int argc, char **argv)
         {
             config_file = argv[++i];
         }
+        else if (strcmp(argv[i], "--snapshot_step") == 0 && i + 1 < argc)
+        {
+            g_snapshot_step = atoi(argv[++i]);
+        }
+        else if (strcmp(argv[i], "--snapshot_fp") == 0 && i + 1 < argc)
+        {
+            g_snapshot_fp = atoi(argv[++i]) != 0;
+        }
+        else if (strcmp(argv[i], "--snapshot_btree") == 0 && i + 1 < argc)
+        {
+            g_snapshot_btree = atoi(argv[++i]) != 0;
+        }
         else
         {
             args.push_back(argv[i]);
@@ -1864,6 +2171,7 @@ int main(int argc, char **argv)
     string nets_file = args[1];
     string terminals_file = args[2];
     string floorplan_file = args[3];
+    g_floorplan_file = floorplan_file; // 供快照命名
     white_space_ratio = atof(args[4].c_str());
 
     // 种子设置
@@ -1901,8 +2209,23 @@ int main(int argc, char **argv)
     srand(seed);
     cout << "Random seed: " << seed << "\n\n";
 
-    BuildInitBtree(); // 随机化建立树
+#if SNAPSHOT_MODE
+    if (g_snapshot_step > 0)
+        cout << "Snapshot: 每 " << g_snapshot_step << " 次迭代记录一次 (fp="
+             << (g_snapshot_fp ? "on" : "off") << ", btree="
+             << (g_snapshot_btree ? "on" : "off") << ")\n";
+#endif
+
+    double init_limit_width = sqrt(total_block_area * (1 + white_space_ratio + 0.2));
+    cout << "Init limit_width: " << init_limit_width << "\n";
+    InitBtreeWithLimit(init_limit_width);
+    // BuildInitBtree(); // 随机化建立树
     // InitBtree();
+
+#if DEBUG_COST_LOG
+    // ---- spdlog: 初始化文件日志（写本次运行的 debug.log，与 run.log 同级）----
+    InitDebugLogger(floorplan_file);
+#endif
 
     // 6. 根据模式调用不同算法
     // 注意：读取文件、构建初始解等公共部分应该提前完成，这里只调用求解函数

@@ -1,0 +1,45 @@
+# ============================================================
+# 运行配置 (yaml_a)
+# 用法：直接运行 `python test_scripts.py` 即按本文件配置执行。
+#       所有字段均可用命令行参数覆盖，例如：
+#           python test_scripts.py --num_runs 30 --draw_fp
+#           python test_scripts.py --config my_config.yaml
+# ============================================================
+# ---- 电路与基础参数 ----
+circuit: n100 # 使用的电路: n10/n30/n50/n100/n200/n300
+white_space_ratio: 0.1 # 空白率
+num_runs: 1 # 运行次数
+algo: 2 # 算法模式: 0=原始算法, 1=FastSA, 2=SawToothFastSA
+
+# ---- 微调 (tune) 和绘制 ----
+tune: false # true=启用微调模式
+draw_fp: true # 是否启用绘制外框 (floorplan)
+draw_btree: false # 是否启用绘制树 (B*-tree)
+draw_curve: false # 是否绘制模拟退火曲线
+
+# ---- 中间布局快照（自动记录 + 绘制）----
+snapshot: true # true=开启：编译 SNAPSHOT_MODE=1，并每隔 snapshot_step 次迭代记录一次当前布局
+snapshot_step: 1000 # 每隔 N 次迭代记录一次（从初始布局开始：1, 1+N, 1+2N, ...）
+
+# ---- 补绘制模式 ----
+redraw: false # true=补绘制模式（不重新运行，仅对已有结果绘图）
+redraw_output: log/2026_08_12/18-29-42_n100_a1_wsr010_tot1_curve/output # 补绘制的 output 目录相对路径，如 log/2026_08_12/01-09-20_n10_a1_wsr010_tot40/output
+
+# ---- debug模式 ----
+debug_log: false # 是否启用 spdlog 调试日志
+
+# ---- 文件/路径（通常保持默认）----
+executable: ./bin/hw3_dbg # 可执行文件路径（相对脚本位置）
+output_dir: null # 输出目录（null=自动生成）
+log_file: null # 完整日志文件路径（null=自动生成）
+seed_file: null # 种子文件路径（null=随机生成）
+skip_make: false # 是否跳过 make 编译
+
+draw_nets: false # 绘制 floorplan 时是否叠加网表连线
+max_nets_draw: null # 绘制网表的最大数量 (null=不限)
+fp_dpi: 120 # floorplan 图片分辨率
+
+# ---- 曲线记录 ----
+record_curve: false # 是否记录模拟退火过程中的详细参数曲线
+
+tune_config: ./config/tune_config.yaml # 微调配置文件路径（默认）

@@ -23,6 +23,39 @@ def get_script_dir() -> Path:
     """返回脚本所在目录"""
     return Path(__file__).resolve().parent
 
+def get_script_dir() -> Path:
+    """返回脚本所在目录"""
+    return Path(__file__).resolve().parent
+
+DEFAULT_RUN_CONFIG = "run_config.yaml"   # yaml_a：运行配置默认文件名
+
+def _find_default_run_config() -> Path:
+    """定位默认运行配置文件：优先脚本同目录，其次 config/ 子目录。"""
+    script_dir = get_script_dir()
+    candidates = [
+        script_dir / DEFAULT_RUN_CONFIG,
+        script_dir / "config" / DEFAULT_RUN_CONFIG,
+    ]
+    for c in candidates:
+        if c.exists():
+            return c
+    return candidates[0]   # 均不存在时返回第一个，便于给出“未找到”警告
+
+def _cfg_value(cfg, key, default):
+    """返回 cfg 中 key 的值；key 缺失或值为 None 时返回 default。"""
+    v = cfg.get(key, default)
+    return default if v is None else v
+
+def load_yaml_config(config_path=None):
+    """读取运行配置 yaml（yaml_a）。文件不存在时返回空 dict。"""
+    if config_path is None:
+        config_path = _find_default_run_config()
+    config_path = Path(config_path)
+    if not config_path.exists():
+        return {}
+    with open(config_path, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f) or {}
+
 def _load_scripts_module(module_name: str):
     """从 scripts/ 目录加载绘图脚本模块（懒加载，避免强制引入 matplotlib/pandas）"""
     scripts_dir = get_script_dir() / "scripts"
@@ -39,18 +72,122 @@ def ensure_dir(path: Path) -> None:
     """确保目录存在"""
     path.mkdir(parents=True, exist_ok=True)
 
-def run_make(script_dir: Path, curve_mode: bool = False) -> None:
-    """执行 make -f Makefile.debug"""
+def _fmt_mtime(path: Path) -> str:
+    """返回文件 mtime 的格式化字符串；文件不存在时返回 (不存在)。"""
+    if path.exists():
+        return datetime.fromtimestamp(path.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S.%f")
+    return "(不存在)"
+
+
+def _write_make_log(make_log: Path, script_dir: Path, cmd: List[str],
+                    returncode: int, output: str,
+                    start_time: datetime, elapsed: float) -> None:
+    """把编译详细过程写入 makefile.log（与 run.log 同级），便于 debug 编译问题。"""
+    bin_dir = Path(script_dir).parent / "bin"
+    lines = []
+    lines.append("=" * 72)
+    lines.append("Makefile 编译详细日志 (makefile.log)")
+    lines.append("=" * 72)
+    lines.append(f"开始时间   : {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+    lines.append(f"耗时       : {elapsed:.3f} s")
+    lines.append(f"工作目录   : {script_dir}")
+    lines.append(f"命令       : {' '.join(cmd)}")
+    lines.append(f"返回码     : {returncode}")
+    lines.append("")
+
+    lines.append("---- 关键文件 mtime（make 依赖判定的直接依据）----")
+    for name in ["fixed-outline_floorplanning.cpp", "utils.cpp",
+                 "algos_config.h", "utils.h", "json.hpp"]:
+        lines.append(f"  {name:<34} {_fmt_mtime(Path(script_dir) / name)}")
+    for name in ["fixed-outline_floorplanning.o", "utils.o", "hw3_dbg", ".build_mode"]:
+        lines.append(f"  {name:<34} {_fmt_mtime(bin_dir / name)}")
+    lines.append("")
+
+    lines.append("---- 自动依赖文件 (.d) 内容（决定 .o 依赖哪些头文件）----")
+    for name in ["fixed-outline_floorplanning.d", "utils.d"]:
+        d_path = bin_dir / name
+        if d_path.exists():
+            lines.append(f"--- {d_path} ---")
+            lines.append(d_path.read_text(encoding="utf-8", errors="replace").rstrip())
+        else:
+            lines.append(f"--- {d_path} --- (不存在)")
+    lines.append("")
+
+    lines.append("---- make 完整输出 ----")
+    lines.append(output.rstrip())
+    lines.append("")
+
+    # 简要结论，帮助快速定位
+    lines.append("---- 结论 ----")
+    if "Nothing to be done" in output:
+        lines.append("make 判定: Nothing to be done（目标 .o 比所有依赖都新，无需重编）")
+        lines.append("          若你刚改过源码却没重编，请对照上方 mtime：")
+        lines.append("          多半是 .cpp 的 mtime 不晚于 .o（修改未保存 / 未落盘 / git 恢复）。")
+        lines.append("          可先 `touch cpp_src/fixed-outline_floorplanning.cpp` 强制重编。")
+    elif re.search(r"-c -o", output):
+        lines.append("make 判定: 执行了编译步骤（输出中出现 g++ -c -o <目标>.o），.o 已重新生成。")
+    elif re.search(r"-o \S*hw3_dbg", output):
+        lines.append("make 判定: 执行了链接步骤（生成 hw3_dbg）。")
+    elif not output.strip():
+        lines.append("make 判定: 输出为空且返回码 0 —— 所有 .o 与 hw3_dbg 均已最新，")
+        lines.append("          本次未执行任何编译/链接步骤（对照上方 mtime 确认即可）。")
+    else:
+        lines.append("make 判定: 输出状态未知，请查看上方 make 完整输出。")
+    lines.append("=" * 72)
+
+    make_log.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def run_make(script_dir: Path, curve_mode: bool = False, debug_log: bool = False,
+             snapshot: bool = False, log_dir: Optional[Path] = None) -> None:
+    """
+    执行 make -f Makefile.debug，并把编译详细过程写入 <log_dir>/makefile.log。
+
+    参数：
+        script_dir : make 的工作目录（cpp_src）
+        curve_mode : CURVE_MODE（0/1）
+        debug_log  : DEBUG_COST_LOG（0/1）
+        log_dir    : 日志目录（run_dir / tune_log_root），用于写 makefile.log；None 则不落盘
+    """
+    CURVE_MODE = 1 if curve_mode else 0
+    DEBUG_COST_LOG = 1 if debug_log else 0
+    SNAPSHOT_MODE = 1 if snapshot else 0
+    cmd = ["make", "-f", "Makefile.debug",
+           f"CURVE_MODE={CURVE_MODE}", f"DEBUG_COST_LOG={DEBUG_COST_LOG}",
+           f"SNAPSHOT_MODE={SNAPSHOT_MODE}"]
+
+    # makefile.log 路径（与 run.log 同级）
+    make_log = None
+    if log_dir is not None:
+        make_log = Path(log_dir) / "makefile.log"
+        make_log.parent.mkdir(parents=True, exist_ok=True)
+
+    start_time = datetime.now()
     print("正在编译...")
     try:
-        CURVE_MODE = 1 if curve_mode else 0
-        subprocess.run(
-            ["make", "-f", "Makefile.debug", f"CURVE_MODE={CURVE_MODE}"],
-            cwd=script_dir,
-            check=True,
-        )
+        proc = subprocess.run(cmd, cwd=script_dir, capture_output=True, text=True)
+        output = proc.stdout + proc.stderr
+        elapsed = (datetime.now() - start_time).total_seconds()
+
+        # 终端照常显示 make 输出（方便直接观察是否出现 g++ 命令）
+        if output:
+            sys.stdout.write(output)
+            if not output.endswith("\n"):
+                sys.stdout.write("\n")
+
+        if make_log is not None:
+            _write_make_log(make_log, script_dir, cmd, proc.returncode,
+                            output, start_time, elapsed)
+
+        if proc.returncode != 0:
+            detail = str(make_log) if make_log else "见上方终端输出"
+            print(f"编译失败: 返回码 {proc.returncode}（详细日志: {detail}）", file=sys.stderr)
+            sys.exit(1)
         print("编译完成。")
-    except subprocess.CalledProcessError as e:
+    except Exception as e:
+        if make_log is not None:
+            with open(make_log, "a", encoding="utf-8") as f:
+                f.write(f"\n[异常] 无法执行 make: {e}\n")
         print(f"编译失败: {e}", file=sys.stderr)
         sys.exit(1)
 
@@ -154,7 +291,7 @@ def parse_output(output_text: str) -> Dict[str, Optional[float]]:
     return result
 
 def run_single(exec_path: Path, hardblocks: str, nets: str, terminals: str,
-               floorplan_file: Path, ratio: float, seed: int, algo:int = 0, curve:bool = False) -> Tuple[str, Dict[str, Optional[float]], int]:
+               floorplan_file: Path, ratio: float, seed: int, algo:int = 0, curve:bool = False, snapshot_step: int = 0) -> Tuple[str, Dict[str, Optional[float]], int]:
     """
     运行单次实验（无临时配置），返回 (原始输出, 提取的指标字典, 返回码)。
     等价于 run_single_with_config(config_file=None)，为保留旧调用点而保留的薄封装。
@@ -163,11 +300,12 @@ def run_single(exec_path: Path, hardblocks: str, nets: str, terminals: str,
         exec_path, hardblocks, nets, terminals,
         floorplan_file, ratio, seed,
         algo=algo, config_file=None,
+        snapshot_step=snapshot_step,
     )
 
 def run_single_with_config(exec_path: Path, hardblocks: str, nets: str, terminals: str,
                            floorplan_file: Path, ratio: float, seed: int,
-                           algo: int = 0, config_file: Optional[str] = None
+                           algo: int = 0, config_file: Optional[str] = None, snapshot_step: int = 0
                            ) -> Tuple[str, Dict[str, Optional[float]], int]:
     """
     运行n次实验，返回 (原始输出, 提取的指标字典, 返回码)，额外支持 --config 参数传入临时 JSON 配置文件。
@@ -175,6 +313,8 @@ def run_single_with_config(exec_path: Path, hardblocks: str, nets: str, terminal
     cmd = [str(exec_path), "--algo", str(algo)]
     if config_file:
         cmd.extend(["--config", config_file])
+    if snapshot_step > 0:
+        cmd.extend(["--snapshot_step", str(snapshot_step)])
     cmd.extend([hardblocks, nets, terminals, str(floorplan_file), str(ratio), str(seed)])
 
     try:
@@ -187,7 +327,7 @@ def run_single_with_config(exec_path: Path, hardblocks: str, nets: str, terminal
         return error_output, {}, -1
 
 def run_with_curve_logging(exec_path, hardblocks, nets, terminals, floorplan_file,
-                           ratio, seed, curve_csv_path, log_file_path, algo=0,):
+                           ratio, seed, curve_csv_path, log_file_path, algo=0,snapshot_step: int = 0,):
     """
     运行n次实验，实时过滤输出：
     - 以 'CSV:' 开头的行：去掉前缀后写入 curve_csv_path
@@ -195,6 +335,8 @@ def run_with_curve_logging(exec_path, hardblocks, nets, terminals, floorplan_fil
     返回 (full_output, metrics, returncode)
     """
     cmd = [str(exec_path), "--algo", str(algo)]
+    if snapshot_step > 0:
+        cmd.extend(["--snapshot_step", str(snapshot_step)])
     cmd.extend([hardblocks, nets, terminals, str(floorplan_file), str(ratio), str(seed)])
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             text=True, bufsize=1)  # 行缓冲
@@ -231,57 +373,117 @@ def run_with_curve_logging(exec_path, hardblocks, nets, terminals, floorplan_fil
 
 ALGO_TO_BLOCK = {
     0: "SA",
-    1: "GMS",
-    2: "FastSA",
-    3: "GMS_FastSA",
-    4: "SawTooth_FastSA",
-    5: "GMS_DoubleMatrix",
-    6: "GMS_SawTooth_FastSA",
+    1: "FastSA",
+    2: "SawTooth_FastSA",
 }
 
 # ========== 公共统计输出函数（减少 main 和 run_tuning 的代码重复） ==========
 
-def compute_stats_from_table(table_data):
-    """
-    从 table_data（每行格式：[run, seed, Width, Height, Area, Wirelength, R, Cost, BTree_T_us, SA_T_s, Feasible]）
-    计算统计量，返回 (stats_dict, five_stats_dict, found_count, not_found_count)
-    """
-    stats = {}
-    five_stats = {}
-    col_names = ["Width", "Height", "Area", "Wirelength", "R", "Cost",
+# 统计列名（与 _make_metric_row 的列顺序一致，从索引 2 开始）
+STAT_COL_NAMES = ["Width", "Height", "Area", "Wirelength", "R", "Cost",
                   "BTree_T_us", "SA_T_s", "Feasible"]
 
-    for col_idx, col_name in enumerate(col_names, start=2):
-        # Feasible 单独处理：统计全部 run（反映真实成功率）
-        if col_name == "Feasible":
-            values = [row[col_idx] for row in table_data if row[col_idx] is not None]
-        # values = [row[col_idx] for row in table_data if row[col_idx] is not None]
-        # 改后：
-        else:
-            values = [row[col_idx] for row in table_data 
-                    if row[col_idx] is not None and row[-1] == 1]
+# 每个指标的最优方向（min=越小越好，max=越大越好）
+BEST_DIRECTION = {
+    "Width": min, "Height": min, "Area": min, "Wirelength": min,
+    "R": max, "Cost": min,
+    "BTree_T_us": min, "SA_T_s": min,
+}
+
+# 本次运行的开始时间（由 write_log_header 记录，末尾统一输出）
+_RUN_START_TIME = None
+
+
+def _stats_for_rows(rows):
+    """对一组行计算每个数值列的平均值/标准差与五数汇总。"""
+    stats, five_stats = {}, {}
+    for col_idx, col_name in enumerate(STAT_COL_NAMES, start=2):
+        values = [row[col_idx] for row in rows if row[col_idx] is not None]
         if values:
-            mean_val = statistics.mean(values)
-            variance_val = statistics.stdev(values) if len(values) > 1 else 0.0
-            stats[col_name] = (mean_val, variance_val)
+            stats[col_name] = (statistics.mean(values),
+                               statistics.stdev(values) if len(values) > 1 else 0.0)
         else:
             stats[col_name] = (None, None)
         five_stats[col_name] = compute_five_number_summary(values)
+    return stats, five_stats
 
-    # 可行解统计
-    feasible_vals = [row[-1] for row in table_data if row[-1] is not None]
-    if feasible_vals:
-        found_count = sum(feasible_vals)
-        not_found_count = len(feasible_vals) - found_count
-    else:
-        found_count = not_found_count = None
 
-    return stats, five_stats, found_count, not_found_count
+def compute_stats_from_table(table_data):
+    """
+    按可行性分组统计。
+    返回:
+      groups = {
+        "all":       (stats, five_stats, n),  # 所有解
+        "found":     (stats, five_stats, n),  # 可行解（Feasible=1）
+        "not_found": (stats, five_stats, n),  # 不可行解（Feasible=0）
+      }
+      found_count, not_found_count
+    """
+    rows_all = [r for r in table_data if r[-1] is not None]
+    rows_found = [r for r in rows_all if r[-1] == 1]
+    rows_not_found = [r for r in rows_all if r[-1] == 0]
+
+    groups = {}
+    for key, rows in [("all", rows_all), ("found", rows_found), ("not_found", rows_not_found)]:
+        stats, five_stats = _stats_for_rows(rows)
+        groups[key] = (stats, five_stats, len(rows))
+
+    return groups, len(rows_found), len(rows_not_found)
+
+
+def best_per_metric(table_data):
+    """
+    对每个指标返回最优解 (run, seed, feasible, value)。基于全部解。
+    feasible: "可行" / "不可行"
+    """
+    result = {}
+    for col_idx, col_name in enumerate(STAT_COL_NAMES, start=2):
+        best_fn = BEST_DIRECTION.get(col_name)
+        if best_fn is None:
+            continue
+        best = None
+        for row in table_data:
+            val = row[col_idx]
+            if val is None:
+                continue
+            cand = (row[0], row[1], ("可行" if row[-1] == 1 else "不可行"), val)
+            if best is None:
+                best = cand
+            else:
+                if best_fn is min and val < best[3]:
+                    best = cand
+                elif best_fn is max and val > best[3]:
+                    best = cand
+        result[col_name] = best
+    return result
+
+def _write_group_table(lf, title, stats, five_stats):
+    """写一张统计表到日志文件。"""
+    lf.write(f"----- {title} -----\n")
+    header = (f"{'指标':<11}{'平均值':<14}{'标准差':<13}{'最小值':<11}{'Q1':<13}"
+              f"{'中位数':<11}{'Q3':<12}{'最大值':<11}{'剔除':<6}")
+    lf.write(header + "\n")
+    lf.write("-" * 116 + "\n")
+    for name in STAT_COL_NAMES:
+        mean_val, var_val = stats.get(name, (None, None))
+        fmin, fq1, fmed, fq3, fmax, n_rem = five_stats.get(name, (None,) * 6)
+        if mean_val is not None:
+            lf.write(f"{name:<12} {mean_val:<15.4f} {var_val:<15.4f} "
+                     f"{f'{fmin:.4f}' if fmin is not None else '-':<12} "
+                     f"{f'{fq1:.4f}' if fq1 is not None else '-':<12} "
+                     f"{f'{fmed:.4f}' if fmed is not None else '-':<12} "
+                     f"{f'{fq3:.4f}' if fq3 is not None else '-':<12} "
+                     f"{f'{fmax:.4f}' if fmax is not None else '-':<12} {n_rem:<6}\n")
+        else:
+            lf.write(f"{name:<12} {'无有效数据':<15} {'无有效数据':<15}\n")
+    lf.write("\n")
 
 
 def write_statistics_to_log(log_file, table_data, algo, mode_desc="", extra_lines=None):
-    """将统计结果写入日志文件（与 main() 中原有格式一致）"""
-    stats, five_stats, found_count, not_found_count = compute_stats_from_table(table_data)
+    """将统计结果写入日志文件：三张分组表 + 各指标最优解 + 开始/结束时间。"""
+    global _RUN_START_TIME
+    groups, found_count, not_found_count = compute_stats_from_table(table_data)
+    bests = best_per_metric(table_data)
 
     with open(log_file, "a") as lf:
         lf.write(f"\n{'='*60}\n")
@@ -290,50 +492,74 @@ def write_statistics_to_log(log_file, table_data, algo, mode_desc="", extra_line
         if extra_lines:
             for line in extra_lines:
                 lf.write(line + "\n")
-        lf.write("统计汇总（剔除 IQR 异常值后）\n")
-        header = (f"{'指标':<11}{'平均值':<14}{'标准差':<13}{'最小值':<11}{'Q1':<13}"
-                  f"{'中位数':<11}{'Q3':<12}{'最大值':<11}{'剔除':<6}")
-        lf.write(header + "\n")
-        lf.write("-" * 116 + "\n")
-        for name, (mean_val, var_val) in stats.items():
-            fmin, fq1, fmed, fq3, fmax, n_rem = five_stats.get(name, (None,) * 6)
-            if mean_val is not None:
-                lf.write(f"{name:<12} {mean_val:<15.4f} {var_val:<15.4f} "
-                         f"{f'{fmin:.4f}' if fmin is not None else '-':<12} "
-                         f"{f'{fq1:.4f}' if fq1 is not None else '-':<12} "
-                         f"{f'{fmed:.4f}' if fmed is not None else '-':<12} "
-                         f"{f'{fq3:.4f}' if fq3 is not None else '-':<12} "
-                         f"{f'{fmax:.4f}' if fmax is not None else '-':<12} {n_rem:<6}\n")
-            else:
-                lf.write(f"{name:<12} {'无有效数据':<15} {'无有效数据':<15}\n")
         lf.write(f"算法模式：{algo}\n")
-        if found_count is not None:
-            lf.write(f"可行解统计: found = {found_count}, not found = {not_found_count}\n")
+        lf.write(f"解数统计: 总 {groups['all'][2]} 个（可行 {found_count}，不可行 {not_found_count}）\n\n")
+
+        # 表格1：可行解
+        s, f, n = groups["found"]
+        _write_group_table(lf, f"表格1 · 可行解统计 (found={n})", s, f)
+        # 表格2：不可行解
+        s, f, n = groups["not_found"]
+        _write_group_table(lf, f"表格2 · 不可行解统计 (not found={n})", s, f)
+        # 表格3：全部解
+        s, f, n = groups["all"]
+        _write_group_table(lf, f"表格3 · 全部解统计 (all={n})", s, f)
+
+        # 各指标最优解
+        lf.write("----- 各指标最优解（基于全部解）-----\n")
+        lf.write(f"{'指标':<10}{'Run':<6}{'Seed':<14}{'类型':<8}{'最优值':<15}\n")
+        lf.write("-" * 60 + "\n")
+        for name, best in bests.items():
+            if best is None:
+                lf.write(f"{name:<12}{'-':<6}{'-':<14}{'-':<8}{'-':<15}\n")
+            else:
+                run, seed, feas, val = best
+                fmt = f"{val:.4f}" if isinstance(val, float) else str(val)
+                lf.write(f"{name:<12}{run:<6}{seed:<14}{feas:<8}{fmt:<15}\n")
+        lf.write("\n")
+
+        lf.write(f"开始时间: {_RUN_START_TIME}\n")
         lf.write(f"结束时间: {datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}\n")
+        lf.write("=" * 46 + "\n")
+
+
+def _print_group_table(title, stats, five_stats):
+    """打印一张统计表到控制台（仅平均值列）。"""
+    print(f"----- {title} -----")
+    print(f"{'指标':<12}{'平均值':<15}")
+    print("-" * 30)
+    for name in STAT_COL_NAMES:
+        mean_val, _ = stats.get(name, (None, None))
+        if mean_val is not None:
+            print(f"{name:<12} {mean_val:<15.4f}")
+        else:
+            print(f"{name:<12} {'无有效数据':<15}")
+    print()
 
 
 def print_statistics_to_console(table_data, algo):
-    """将统计结果打印到控制台（与 main() 中原有格式一致）"""
-    stats, five_stats, found_count, not_found_count = compute_stats_from_table(table_data)
+    """打印全部解统计 + 各指标最优解。"""
+    groups, found_count, not_found_count = compute_stats_from_table(table_data)
+    bests = best_per_metric(table_data)
 
     print("\n========== 统计结果 ==========")
-    header = f"{'指标':<11}{'平均值':<13}{'标准差':<13}{'最小值':<10}{'Q1':<13}{'中位数':<10}{'Q3':<13}{'最大值':<12}"
-    print(header)
-    print("-" * 105)
-    for name, (mean_val, var_val) in stats.items():
-        fmin, fq1, fmed, fq3, fmax, n_rem = five_stats.get(name, (None,) * 6)
-        if mean_val is not None:
-            print(f"{name:<12} {mean_val:<15.4f} {var_val:<15.4f} "
-                  f"{f'{fmin:.4f}' if fmin is not None else '-':<12} "
-                  f"{f'{fq1:.4f}' if fq1 is not None else '-':<12} "
-                  f"{f'{fmed:.4f}' if fmed is not None else '-':<12} "
-                  f"{f'{fq3:.4f}' if fq3 is not None else '-':<12} "
-                  f"{f'{fmax:.4f}' if fmax is not None else '-':<12}")
-        else:
-            print(f"{name:<12} {'无有效数据':<15} {'无有效数据':<15}")
     print(f"算法模式：{algo}")
-    if found_count is not None:
-        print(f"可行解统计: found = {found_count}, not found = {not_found_count}")
+    print(f"解数统计: 总 {groups['all'][2]} 个（可行 {found_count}，不可行 {not_found_count}）")
+
+    # 只需全部解统计
+    s, f, n = groups["all"]
+    _print_group_table(f"全部解统计 (all={n})", s, f)
+
+    print("----- 各指标最优解（基于全部解）-----")
+    print(f"{'指标':<10}{'Run':<6}{'Seed':<14}{'类型':<8}{'最优值':<15}")
+    print("-" * 60)
+    for name, best in bests.items():
+        if best is None:
+            print(f"{name:<12}{'-':<6}{'-':<14}{'-':<8}{'-':<15}")
+        else:
+            run, seed, feas, val = best
+            fmt = f"{val:.4f}" if isinstance(val, float) else str(val)
+            print(f"{name:<12}{run:<6}{seed:<14}{feas:<8}{fmt:<15}")
 
 # ========== 种子管理函数 ==========
 
@@ -382,35 +608,34 @@ def load_or_generate_seeds(num_runs: int, seed_file_arg: Optional[str],
 
 # ========== 编译与路径管理 ==========
 
-def compile_and_check(exec_path: Path, script_dir: Path, skip_make: bool, curve_mode: bool = False) -> None:
+def compile_and_check(exec_path: Path, script_dir: Path, skip_make: bool,
+                      curve_mode: bool = False, debug_log: bool = False,
+                      snapshot: bool = False,
+                      log_dir: Optional[Path] = None) -> None:
     """编译（如需）并检查可执行文件是否存在"""
     if not skip_make:
         cpp_src_dir = script_dir / "cpp_src"
         if not cpp_src_dir.exists():
             print(f"错误: cpp_src 目录不存在: {cpp_src_dir}", file=sys.stderr)
             sys.exit(1)
-        run_make(cpp_src_dir, curve_mode=curve_mode)
+        run_make(cpp_src_dir, curve_mode=curve_mode, debug_log=debug_log,
+                 snapshot=snapshot, log_dir=log_dir)
     if not exec_path.exists():
         print(f"错误: 可执行文件不存在: {exec_path}", file=sys.stderr)
         sys.exit(1)
 
 def write_log_header(log_file: Path, hardblocks: str, nets: str, terminals: str,
                      ratio: float, num_runs: int) -> None:
-    """写入实验头部信息到日志文件"""
-    with open(log_file, "w") as lf:
-        lf.write("=" * 46 + "\n")
-        lf.write("Batch floorplanning experiment\n")
-        lf.write(f"Hardblocks: {hardblocks}\n")
-        lf.write(f"Nets:       {nets}\n")
-        lf.write(f"Terminals:  {terminals}\n")
-        lf.write(f"Ratio:      {ratio}\n")
-        lf.write(f"Runs:       {num_runs}\n")
-        lf.write(f"Start time: {datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}\n")
-        lf.write("=" * 46 + "\n\n")
+    """仅清空/初始化日志文件；开始时间在末尾统一输出（不再写开头头部）。"""
+    global _RUN_START_TIME
+    _RUN_START_TIME = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+    with open(log_file, "w"):
+        pass
 
 def create_run_dirs(circuit: str, white_space_ratio: float,
                     algo: int, num_runs: int,
-                    draw_fp: bool = False, draw_curve: bool = False) -> Tuple[Path, Path]:
+                    draw_fp: bool = False, draw_curve: bool = False,
+                    draw_btree: bool = False) -> Tuple[Path, Path]:
     """
     创建统一日志目录结构，返回 (run_dir, log_file)。
     
@@ -431,6 +656,8 @@ def create_run_dirs(circuit: str, white_space_ratio: float,
     suffix = ""
     if draw_fp:
         suffix += "_fp"
+    if draw_btree:
+        suffix += "_btree"
     if draw_curve:
         suffix += "_curve"
 
@@ -480,6 +707,19 @@ def write_config_yaml(run_dir: Path, args: Namespace) -> None:
         "executable": args.executable,
         "skip_make": args.skip_make,
         "record_curve": args.record_curve,
+        "debug_log": args.debug_log,
+        "draw_fp": args.draw_fp,
+        "draw_btree": args.draw_btree,
+        "draw_curve": args.draw_curve,
+        "redraw": getattr(args, "redraw", False),
+        "redraw_output": getattr(args, "redraw_output", None),
+        "draw_nets": args.draw_nets,
+        "max_nets_draw": args.max_nets_draw,
+        "fp_dpi": args.fp_dpi,
+        "output_dir": str(args.output_dir) if args.output_dir else None,
+        "log_file": str(args.log_file) if args.log_file else None,
+        "seed_file": str(args.seed_file) if args.seed_file else None,
+        "config_source": str(getattr(args, "config_path", "")),
         "timestamp": datetime.now().strftime('%Y-%m-%d_%H-%M-%S'),
     }
     with open(config_path, "w") as f:
@@ -558,11 +798,10 @@ def run_tuning(args):
     algo_tag = f"_algo{algo}"
 
     exec_path, hardblocks, nets, terminals = resolve_common_paths(script_dir, args)
-    compile_and_check(exec_path, script_dir, args.skip_make, curve_mode=(args.record_curve or args.draw_curve))
 
     # --- 目录结构：log/YYYY_MM_DD/HH-MM-SS_tune_a{algo}_{param}_{start}-{end}/ ---
     #     param_{value}/
-    #         running_results_algo{...}.txt     (含完整统计)
+    #     running_results_algo{...}.txt         (含完整统计)
     #     output/                               (val{pv}_run{r}.floorplan)
     #     curves/                               (param_{value}/curve_data.csv)
     #     figures/                              (曲线图)
@@ -574,6 +813,12 @@ def run_tuning(args):
     tune_name = f"{time_str}_tune_a{algo}_{param_name}_{start}-{end}"
     tune_log_root = script_dir / "log" / date_str / tune_name
     ensure_dir(tune_log_root)
+
+    # 编译（makefile.log 写入 tune_log_root/，与统计日志同级，便于 debug 编译问题）
+    compile_and_check(exec_path, script_dir, args.skip_make,
+                      curve_mode=(args.record_curve or args.draw_curve),
+                      debug_log=args.debug_log,
+                      log_dir=tune_log_root)
 
     # 日志目录：tune_log/param_*/run{idx}.log + statistics.txt
     tune_log = tune_log_root / "tune_log"
@@ -703,8 +948,8 @@ def run_tuning(args):
                                 mode_desc=param_mode_desc)
 
         # 保存汇总信息
-        stats, _, found_cnt, _ = compute_stats_from_table(param_table_data)
-        cost_mean = stats.get("Cost", (None, None))[0]
+        groups, found_cnt, _ = compute_stats_from_table(param_table_data)
+        cost_mean = groups["all"][0].get("Cost", (None, None))[0]
         feas_rate = (found_cnt / num_runs_per_value * 100) if found_cnt is not None else 0
         all_summary[param_val] = {"mean_cost": cost_mean, "feas_rate": feas_rate}
 
@@ -738,7 +983,8 @@ def run_tuning(args):
             sf.write(line + "\n")
 
     # ========== 8. 清理临时 JSON 配置文件 ==========
-    for f in config_dir.glob("tune_*.json"):
+    # 注意：生成名形如 tune_algo{algo}_{param}{val}.json，必须用 tune_algo{algo}_*.json 才能匹配
+    for f in config_dir.glob(f"tune_algo{algo}_*.json"):
         try:
             f.unlink()
         except OSError:
@@ -749,65 +995,200 @@ def run_tuning(args):
     update_latest_link(tune_log_root)
 
     # ===== 可选：绘制 floorplan / B*-tree（调优模式）=====
-    if args.draw_fp:
-        draw_fp = _load_scripts_module("draw_fixed_outline")
-        tune_fp_args = Namespace(
+    if args.draw_fp or args.draw_btree:
+        draw_mod = _load_scripts_module("draw_fixed_outline")
+        tune_draw_args = Namespace(
             tune=str(tune_log_root),               # 调优运行目录
             output=str(figure_root),               # 图片输出到 tune_dir/figures/
             dpi=args.fp_dpi,
             algo=algo,
             max_read=None,
             blocks=int(args.circuit.lstrip('n')),  # 备用块数（通常由 floorplan 推断）
+            draw_fp=bool(args.draw_fp),
+            draw_btree=bool(args.draw_btree),
         )
-        draw_fp.main(tune_fp_args)
+        draw_mod.main(tune_draw_args)
 
     print(f"\n详细日志: {tune_log_root}/")
     print(f"汇总文件: {summary_file}")
     print("调优完成。")
 
+def run_redraw(args):
+    """
+    补绘制模式：对某一次已运行的结果（output 目录）补画外框/树图。
+    通过 redraw_output 指定 output 目录（相对脚本目录），
+    读取其上级 run_dir 下的 config.yaml 获取该次运行参数。
+    """
+    script_dir = get_script_dir()
+
+    if not getattr(args, "redraw_output", None):
+        print("错误: 补绘制模式需要指定 --redraw_output（如 log/2026_08_12/.../output）",
+              file=sys.stderr)
+        sys.exit(1)
+
+    # 1. 定位 output 目录（相对脚本目录）
+    output_dir = (script_dir / args.redraw_output).resolve()
+    if not output_dir.is_dir():
+        print(f"错误: 输出目录不存在: {output_dir}", file=sys.stderr)
+        sys.exit(1)
+
+    # 2. run_dir = output 的上级目录
+    run_dir = output_dir.parent
+
+    # 3. 读取该次运行写入的 config.yaml（复现参数）
+    cfg_path = run_dir / "config.yaml"
+    cfg = {}
+    if cfg_path.exists():
+        with open(cfg_path, "r", encoding="utf-8") as f:
+            cfg = yaml.safe_load(f) or {}
+        print(f"已读取运行配置: {cfg_path}")
+    else:
+        print(f"警告: 未找到 {cfg_path}，将使用命令行/yaml_a 中的参数")
+
+    # 4. 组装绘图参数（config.yaml 优先，其次命令行/yaml_a）
+    circuit = cfg.get("circuit") or args.circuit
+    blocks = int(circuit.lstrip('n')) if circuit else None
+    ratio = cfg.get("white_space_ratio", args.white_space_ratio)
+    algo = cfg.get("algo", args.algo)
+    num_runs = cfg.get("num_runs", args.num_runs)
+    dpi = cfg.get("fp_dpi", args.fp_dpi)
+    draw_nets = cfg.get("draw_nets", args.draw_nets)
+    max_nets_draw = cfg.get("max_nets_draw", args.max_nets_draw)
+
+    if blocks is None:
+        print("错误: 无法确定块数（circuit 缺失），无法补绘", file=sys.stderr)
+        sys.exit(1)
+    if not (args.draw_fp or args.draw_btree):
+        print("错误: 补绘制模式请至少打开 draw_fp 或 draw_btree", file=sys.stderr)
+        sys.exit(1)
+
+    # 5. 图片输出到 run_dir/figures/
+    figure_dir = run_dir / "figures"
+    figure_dir.mkdir(parents=True, exist_ok=True)
+
+    # 6. 调用 draw_fixed_outline（只画指定的部分）
+    draw_mod = _load_scripts_module("draw_fixed_outline")
+    draw_args = Namespace(
+        blocks=blocks,
+        ratio=ratio,
+        num_runs=num_runs,
+        algo=algo,
+        max_read=None,
+        floorplan=None,
+        btree=None,
+        output=str(figure_dir),
+        dpi=dpi,
+        no_labels=False,
+        draw_nets=draw_nets,
+        max_nets_draw=max_nets_draw,
+        floorplan_dir=str(output_dir),
+        tune=None,
+        draw_fp=bool(args.draw_fp),
+        draw_btree=bool(args.draw_btree),
+    )
+    draw_mod.main(draw_args)
+    print(f"\n补绘制完成，图片保存至: {figure_dir}")
+
 # ---------- 参数解析 ----------
-def parse_args():
+def parse_args(argv=None):
+    script_dir = get_script_dir()
+
+    # 阶段一：先解析 --config，确定 yaml_a 文件路径（默认 run_config.yaml）
+    pre_parser = argparse.ArgumentParser(add_help=False)
+    pre_parser.add_argument("--config", type=str, default=None)
+    pre_args, remaining = pre_parser.parse_known_args(argv)
+
+    if pre_args.config:
+        cfg_path = Path(pre_args.config).resolve()
+    else:
+        cfg_path = _find_default_run_config()
+    cfg = load_yaml_config(cfg_path)
+
+    # 若 yaml_a 中 tune=True，则 args.tune 默认使用其 tune_config 路径
+    default_tune = None
+    if cfg.get("tune"):
+        tc = _cfg_value(cfg, "tune_config",
+                        str(script_dir / "config" / "tune_config.yaml"))
+        default_tune = str((script_dir / tc).resolve())
+
     parser = argparse.ArgumentParser(description="批量运行 hw3_dbg 并收集结果")
-    parser.add_argument("--executable", type=str, default="./bin/hw3_dbg",
+    parser.add_argument("--config", type=str, default=str(cfg_path),
+                        help=f"运行配置文件路径（默认 {DEFAULT_RUN_CONFIG}）")
+    parser.add_argument("--executable", type=str,
+                        default=_cfg_value(cfg, "executable", "./bin/hw3_dbg"),
                         help="可执行文件路径（相对于脚本位置）")
-    parser.add_argument("--circuit", type=str, default="n10", choices=['n10', 'n30', 'n50', 'n100', 'n200', 'n300'],
+    parser.add_argument("--circuit", type=str, default=_cfg_value(cfg, "circuit", "n10"),
+                        choices=['n10', 'n30', 'n50', 'n100', 'n200', 'n300'],
                         help="auto-load ./testcase/<circuit>.hardblocks(.nets/.pl)")
-    parser.add_argument("--white_space_ratio", type=float, default=0.1,
+    parser.add_argument("--white_space_ratio", type=float,
+                        default=_cfg_value(cfg, "white_space_ratio", 0.1),
                         help="空白比例")
-    parser.add_argument("--num_runs", type=int, default=20,
+    parser.add_argument("--num_runs", type=int,
+                        default=_cfg_value(cfg, "num_runs", 20),
                         help="运行次数")
-    parser.add_argument("--output_dir", type=str, default=None,
+    parser.add_argument("--output_dir", type=str, default=cfg.get("output_dir"),
                         help="floorplan 输出目录（自动生成前缀）")
-    parser.add_argument("--log_file", type=str, default=None,
+    parser.add_argument("--log_file", type=str, default=cfg.get("log_file"),
                         help="完整日志文件路径（原始输出）")
-    parser.add_argument("--seed_file", type=str, default=None,
+    parser.add_argument("--seed_file", type=str, default=cfg.get("seed_file"),
                         help="种子文件路径")
-    parser.add_argument("--skip_make", action="store_true",
-                        help="跳过 make 编译步骤")
-    parser.add_argument("--record_curve", action="store_true",
+    parser.add_argument("--skip_make", action=argparse.BooleanOptionalAction,
+                        default=_cfg_value(cfg, "skip_make", False),
+                        help="跳过 make 编译步骤（可用 --no-skip_make 关闭）")
+    parser.add_argument("--record_curve", action=argparse.BooleanOptionalAction,
+                        default=_cfg_value(cfg, "record_curve", False),
                         help="记录模拟退火过程中的详细参数曲线")
-    parser.add_argument("-a","--algo", type=int, default=0,
-                        help="算法模式: 0=原始算法, 1=GMS, 2=... (默认0)")
-    parser.add_argument("--tune", type=str, default=None,
+    parser.add_argument("--debug_log", action=argparse.BooleanOptionalAction,
+                        default=_cfg_value(cfg, "debug_log", False),
+                        help="启用 spdlog 调试日志（debug信息写入 debug.log，需重新编译）")    
+    parser.add_argument("-a", "--algo", type=int, choices=[0, 1, 2], default=_cfg_value(cfg, "algo", 0),
+                        help="算法模式: 0=SA, 1=FastSA, 2=SawTooth_FastSA (默认0)")
+    parser.add_argument("--tune", type=str, default=default_tune,
                         help="调优配置文件（YAML），对某个参数进行网格搜索。例如: --tune tune_config.yaml")
 
     # plot and draw
-    parser.add_argument("--draw_fp", action="store_true",
-                    help="批量实验完成后自动绘制 floorplan 与 B*-tree 图（调用 scripts/draw_fixed_outline.py）")
-    parser.add_argument("--draw_curve", action="store_true",
+    parser.add_argument("--draw_fp", action=argparse.BooleanOptionalAction,
+                        default=_cfg_value(cfg, "draw_fp", False),
+                        help="批量实验完成后自动绘制 floorplan（外框）图（调用 scripts/draw_fixed_outline.py）")
+    parser.add_argument("--draw_btree", action=argparse.BooleanOptionalAction,
+                        default=_cfg_value(cfg, "draw_btree", False),
+                        help="批量实验完成后自动绘制 B*-tree（树）图（调用 scripts/draw_fixed_outline.py）")
+    parser.add_argument("--draw_curve", action=argparse.BooleanOptionalAction,
+                        default=_cfg_value(cfg, "draw_curve", False),
                         help="曲线记录完成后自动绘制模拟退火曲线（调用 scripts/draw_curve.py，需 --record_curve）")
-    parser.add_argument("--draw_nets", action="store_true",
+    # ---- 补绘制模式 ----
+    parser.add_argument("--redraw", action=argparse.BooleanOptionalAction,
+                        default=_cfg_value(cfg, "redraw", False),
+                        help="补绘制模式：对指定 output 目录补画外框/树图（不重新运行实验）")
+    parser.add_argument("--redraw_output", type=str, default=cfg.get("redraw_output"),
+                        help="补绘制的 output 目录（相对脚本目录，如 log/2026_08_12/.../output）")
+    parser.add_argument("--draw_nets", action=argparse.BooleanOptionalAction,
+                        default=_cfg_value(cfg, "draw_nets", False),
                         help="绘制 floorplan 时叠加网表连线（需配合 --draw_fp）")
-    parser.add_argument("--max_nets_draw", type=int, default=None,
+    parser.add_argument("--max_nets_draw", type=int, default=cfg.get("max_nets_draw"),
                         help="绘制网表的最大数量（需配合 --draw_nets）")
-    parser.add_argument("--fp_dpi", type=int, default=120,
+    parser.add_argument("--fp_dpi", type=int, default=_cfg_value(cfg, "fp_dpi", 120),
                         help="floorplan 图片分辨率（默认120）")
-    
-    return parser.parse_args()
+
+    parser.add_argument("--snapshot", action=argparse.BooleanOptionalAction,
+                        default=_cfg_value(cfg, "snapshot", False),
+                        help="开启中间布局快照：每隔 snapshot_step 次迭代记录一次当前布局并绘图")
+    parser.add_argument("--snapshot_step", type=int,
+                        default=_cfg_value(cfg, "snapshot_step", 1000),
+                        help="每隔 N 次迭代记录一次快照（从初始布局开始：1, 1+N, 1+2N, ...）")
+    args = parser.parse_args(remaining)
+    args.config_path = cfg_path
+    return args
 
 # ---------- 主函数 ----------
 def main():
     args = parse_args()
+
+    if getattr(args, "config_path", None) and Path(args.config_path).exists():
+        print(f"已从运行配置文件加载默认参数: {args.config_path}")
+        print("（命令行参数优先级更高，可覆盖 yaml 中的设置）")
+    else:
+        print(f"警告: 未找到配置文件 {args.config_path}，将使用内置默认参数")
     
     # if draw_curve, set record_curve in True
     if args.draw_curve:
@@ -818,7 +1199,13 @@ def main():
         run_tuning(args)
         return
     # ==========================
-    
+
+    # ===== 补绘制模式：只对已有结果绘图，不重新运行 =====
+    if args.redraw:
+        run_redraw(args)
+        return
+    # ===================================================
+
     # ====== 非调优模式 =========
     script_dir = get_script_dir()
     timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')    #时间戳
@@ -830,7 +1217,8 @@ def main():
                                         args.algo,
                                         args.num_runs,
                                         args.draw_fp,
-                                        args.draw_curve,)
+                                        args.draw_curve,
+                                        args.draw_btree,)
     write_config_yaml(run_dir, args)
 
     # output/log: auto-generate in run_dir by default; or explictly specify a directory
@@ -852,8 +1240,12 @@ def main():
     # 补全默认路径（相对于脚本目录）
     exec_path, hardblocks, nets, terminals = resolve_common_paths(script_dir, args)
 
-    # 编译
-    compile_and_check(exec_path, script_dir, args.skip_make, curve_mode=(args.record_curve or args.draw_curve))
+    # 编译（makefile.log 写入 run_dir/，与 run.log 同级，便于 debug 编译问题）
+    compile_and_check(exec_path, script_dir, args.skip_make,
+                      curve_mode=(args.record_curve or args.draw_curve),
+                      debug_log=args.debug_log,
+                      snapshot=args.snapshot,
+                      log_dir=run_dir)
 
     # num_runs is capped in 10 in record_curve mode
     if args.record_curve and args.num_runs > 10:
@@ -892,14 +1284,18 @@ def main():
             output_text, metrics, retcode = run_with_curve_logging(
                 exec_path, hardblocks, nets, terminals,
                 floorplan_file, args.white_space_ratio, 
-                seed, curve_csv_path, log_file, algo=args.algo,)
+                seed, curve_csv_path, log_file, algo=args.algo,
+                snapshot_step=(args.snapshot_step if args.snapshot else 0),)
             # 仍然可以收集最终指标到 table_data，以便统计（可选）
             # 提取指标存入表格
             row = _make_metric_row(run_idx, seed, metrics)
             table_data.append(row)
             
-            # 终端显示进度
-            print(f"[{run_idx}/{args.num_runs}] seed={seed} 完成 (返回码 {retcode})")
+            # 终端显示进度（运行时间 + 可行性标记）
+            sa_t = metrics.get("SA_T_s")
+            sa_str = f"{sa_t:.4f}s" if sa_t is not None else "N/A"
+            mark = " ✔" if metrics.get("Feasible") == 1 else ""
+            print(f"[{run_idx}/{args.num_runs}] seed={seed} 完成 (返回码 {retcode}) | 运行时间: {sa_str}{mark}")
 
             # 附加统计信息到日志文件末尾
 
@@ -920,6 +1316,7 @@ def main():
                 exec_path, hardblocks, nets, terminals,
                 floorplan_file, args.white_space_ratio, 
                 seed, algo=args.algo,   # 批量模式下不输出曲线
+                snapshot_step=(args.snapshot_step if args.snapshot else 0),
             )
 
             # 记录原始输出到日志
@@ -936,8 +1333,11 @@ def main():
             row = _make_metric_row(run_idx, seed, metrics)
             table_data.append(row)
 
-            # 终端显示进度
-            print(f"[{run_idx}/{args.num_runs}] seed={seed} 完成 (返回码 {retcode})")
+            # 终端显示进度（运行时间 + 可行性标记）
+            sa_t = metrics.get("SA_T_s")
+            sa_str = f"{sa_t:.4f}s" if sa_t is not None else "N/A"
+            mark = " ✔" if metrics.get("Feasible") == 1 else ""
+            print(f"[{run_idx}/{args.num_runs}] seed={seed} 完成 (返回码 {retcode}) | 运行时间: {sa_str}{mark}")
 
     # ---- 统计输出 ----
     print_statistics_to_console(table_data, args.algo)
@@ -947,9 +1347,9 @@ def main():
     # ===== 更新 latest 链接 =====
     update_latest_link(run_dir)
 
-    # ---- 可选：自动绘制 floorplan / B*-tree 图 ----
+    # ---- 自动绘制 floorplan（外框）图 ----
     if args.draw_fp:
-        draw_fp = _load_scripts_module("draw_fixed_outline")
+        draw_mod = _load_scripts_module("draw_fixed_outline")
         fp_args = Namespace(
             blocks=int(args.circuit.lstrip('n')),   # 由 circuit 推导块数
             ratio=args.white_space_ratio,
@@ -964,10 +1364,36 @@ def main():
             draw_nets=args.draw_nets,
             max_nets_draw=args.max_nets_draw,
             floorplan_dir=str(output_dir),          # 显式传入实验输出目录
+            tune=None,
+            draw_fp=True,
+            draw_btree=False,
         )
-        draw_fp.main(fp_args)
+        draw_mod.main(fp_args)
 
-    # ---- 可选：自动绘制模拟退火曲线 ----
+    # ---- 自动绘制 B*-tree（树）图 ----
+    if args.draw_btree:
+        draw_mod = _load_scripts_module("draw_fixed_outline")
+        bt_args = Namespace(
+            blocks=int(args.circuit.lstrip('n')),
+            ratio=args.white_space_ratio,
+            num_runs=args.num_runs,
+            algo=args.algo,
+            max_read=None,
+            floorplan=None,
+            btree=None,
+            output=str(figure_dir),
+            dpi=args.fp_dpi,
+            no_labels=False,
+            draw_nets=args.draw_nets,
+            max_nets_draw=args.max_nets_draw,
+            floorplan_dir=str(output_dir),
+            tune=None,
+            draw_fp=False,
+            draw_btree=True,
+        )
+        draw_mod.main(bt_args)
+
+    # ---- 自动绘制模拟退火曲线 ----
     if args.draw_curve:
         draw_curve = _load_scripts_module("draw_curve")
         curve_args = Namespace(
@@ -981,6 +1407,31 @@ def main():
             tune=None,
         )
         draw_curve.main(curve_args)
+
+    # ---- 自动绘制中间布局快照（figures/snapshots/）----
+    if args.snapshot:
+        draw_mod = _load_scripts_module("draw_fixed_outline")
+        snap_fig_dir = figure_dir / "snapshots"
+        snap_fig_dir.mkdir(parents=True, exist_ok=True)
+        snap_files = sorted(
+            (output_dir / "snapshots").glob("*_iter*.floorplan"),
+            key=lambda p: int(p.stem.rsplit("_iter", 1)[1]) if "_iter" in p.stem else 0,
+        )
+        for fp in snap_files:
+            bt = fp.with_suffix(".Btree")
+            snap_args = Namespace(
+                floorplan=str(fp),
+                btree=str(bt) if bt.exists() else None,
+                output=str(snap_fig_dir),
+                dpi=args.fp_dpi,
+                no_labels=False,
+                draw_fp=bool(args.draw_fp),
+                draw_btree=bool(args.draw_btree),
+                draw_nets=args.draw_nets,
+                max_nets_draw=args.max_nets_draw,
+                tune=None,
+            )
+            draw_mod.main(snap_args)
 
     print(f"\n完整日志保存在: {log_file}")
     print("全部完成。")

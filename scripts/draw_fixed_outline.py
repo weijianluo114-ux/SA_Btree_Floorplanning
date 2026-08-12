@@ -26,6 +26,10 @@ from matplotlib.lines import Line2D
 #  第一部分：解析 .floorplan 文件
 # ==============================================================
 
+def _clean_stem(stem: str) -> str:
+    """去掉文件名中的时间戳部分（如 run1_2026-08-11_16-33-34 -> run1）。"""
+    return re.sub(r"_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}", "", stem)
+
 def parse_floorplan_file(file_path):
     """
     解析 .floorplan 文件，返回 (chip_width, blocks)
@@ -453,8 +457,10 @@ def get_sorted_file_pairs(output_dir, max_read=None):
     按文件名排序（时间戳），返回 list of (floorplan_path, btree_path)。
     max_read: 最多读取的文件对数（从第一对开始）。
     """
-    fp_files = sorted(output_dir.glob("*.floorplan"))
-
+    # 跳过中间快照文件（run*_iter*），只保留最终结果
+    fp_files = sorted(f for f in output_dir.glob("*.floorplan")
+                      if "_iter" not in f.stem)
+    
     pairs = []
     for fp in fp_files:
         # 对应的 .Btree 文件名：替换后缀
@@ -514,15 +520,15 @@ def run_tune(args):
         out_sub.mkdir(parents=True, exist_ok=True)
 
         for fp_path, bt_path in pairs:
-            stem = fp_path.stem
+            stem = _clean_stem(fp_path.stem)
             print(f"\n  [{param_dir.name}] 处理 {stem}")
             chip_width, blocks = parse_floorplan_file(str(fp_path))
-            if blocks:
+            if getattr(args, 'draw_fp', True) and blocks:
                 fp_img = out_sub / f"{stem}_floorplan.png"
                 draw_floorplan(blocks, chip_width, output_image=str(fp_img),
                                show_labels=True, dpi=args.dpi, algo=algo)
             root_id, children = parse_btree_file(str(bt_path), num_blocks)
-            if root_id >= 0:
+            if getattr(args, 'draw_btree', True) and root_id >= 0:
                 bt_img = out_sub / f"{stem}_btree.png"
                 draw_btree(root_id, children, block_names,
                            output_image=str(bt_img), dpi=args.dpi)
@@ -582,41 +588,40 @@ def run_batch(args):
     block_names = [f"sb{i}" for i in range(args.blocks)]
 
     for idx, (fp_path, bt_path) in enumerate(pairs, start=1):
-        stem = fp_path.stem  # 如 "run1_2026-06-09_12:00:00"
+        stem = _clean_stem(fp_path.stem)  # 如 "run1_2026-06-09_12:00:00" -> "run1"
         print(f"\n[{idx}/{len(pairs)}] 处理 {stem}")
 
-        # --- 绘制 Floorplan ---
-        chip_width, blocks = parse_floorplan_file(str(fp_path))
-        if blocks:
-            # ---- 修改：构建 block_dict 并传递 nets_data ----
-            block_dict = _build_block_dict(blocks) if nets_data else None
-            extra_kwargs = {}
-            if nets_data:
-                extra_kwargs['nets'] = nets_data[0]
-                extra_kwargs['block_dict'] = block_dict
-                extra_kwargs['pin_dict'] = nets_data[1]
-                extra_kwargs['max_nets_draw'] = args.max_nets_draw
-            # 生成带网表的图片（以 _with_nets 后缀区分）
-            if nets_data:
-                fp_img_nets = fig_dir / f"{stem}_floorplan_with_nets.png"
-                draw_floorplan(blocks, chip_width, output_image=str(fp_img_nets),
-                               show_labels=True, dpi=args.dpi, algo=args.algo,
-                               **extra_kwargs)
-            # 同时输出原始的 floorplan（不带网表）
-            fp_img = fig_dir / f"{stem}_floorplan.png"
-            draw_floorplan(blocks, chip_width, output_image=str(fp_img),
-                           show_labels=True, dpi=args.dpi, algo=args.algo)
-        else:
-            print(f"  跳过 Floorplan: 无有效块数据")
+        # --- 绘制 Floorplan（外框）---
+        if getattr(args, 'draw_fp', True):
+            chip_width, blocks = parse_floorplan_file(str(fp_path))
+            if blocks:
+                block_dict = _build_block_dict(blocks) if nets_data else None
+                extra_kwargs = {}
+                if nets_data:
+                    extra_kwargs['nets'] = nets_data[0]
+                    extra_kwargs['block_dict'] = block_dict
+                    extra_kwargs['pin_dict'] = nets_data[1]
+                    extra_kwargs['max_nets_draw'] = args.max_nets_draw
+                if nets_data:
+                    fp_img_nets = fig_dir / f"{stem}_floorplan_with_nets.png"
+                    draw_floorplan(blocks, chip_width, output_image=str(fp_img_nets),
+                                   show_labels=True, dpi=args.dpi, algo=args.algo,
+                                   **extra_kwargs)
+                fp_img = fig_dir / f"{stem}_floorplan.png"
+                draw_floorplan(blocks, chip_width, output_image=str(fp_img),
+                               show_labels=True, dpi=args.dpi, algo=args.algo)
+            else:
+                print(f"  跳过 Floorplan: 无有效块数据")
 
-        # --- 绘制 B-tree ---
-        root_id, children = parse_btree_file(str(bt_path), args.blocks)
-        if root_id >= 0:
-            bt_img = fig_dir / f"{stem}_btree.png"
-            draw_btree(root_id, children, block_names,
-                       output_image=str(bt_img), dpi=args.dpi)
-        else:
-            print(f"  跳过 B-tree: 无效根节点")
+        # --- 绘制 B-tree（树）---
+        if getattr(args, 'draw_btree', True):
+            root_id, children = parse_btree_file(str(bt_path), args.blocks)
+            if root_id >= 0:
+                bt_img = fig_dir / f"{stem}_btree.png"
+                draw_btree(root_id, children, block_names,
+                           output_image=str(bt_img), dpi=args.dpi)
+            else:
+                print(f"  跳过 B-tree: 无效根节点")
 
     print(f"\n全部绘制完成！图片保存至: {fig_dir}")
 
@@ -658,10 +663,16 @@ def main(args=None):
         # --- 通用参数 ---
         parser.add_argument("-o", "--output", type=str, default=None,
                             help="单文件模式输出目录（默认与 .floorplan 同目录）")
-        parser.add_argument("--dpi", type=int, default=300,
-                            help="输出图片分辨率（默认300）")
+        parser.add_argument("--dpi", type=int, default=120,
+                            help="输出图片分辨率（默认120）")
         parser.add_argument("--no_labels", action="store_true",
                             help="不显示块名称标签")
+        
+        # --- 绘制开关（默认都画；test_scripts.py 可分别控制）---
+        parser.add_argument("--draw_fp", action=argparse.BooleanOptionalAction, default=True,
+                            help="是否绘制 floorplan（外框）图")
+        parser.add_argument("--draw_btree", action=argparse.BooleanOptionalAction, default=True,
+                            help="是否绘制 B*-tree（树）图")
         
         # --- 网表绘制参数 ---
         parser.add_argument("--draw_nets", action="store_true",
@@ -718,34 +729,34 @@ def main(args=None):
             else:
                 print(f"警告: 未找到测试用例文件，跳过网表绘制")
         # -----------------------------------
-
-        # 绘制 Floorplan
-                # 确定输出目录
+        # 确定输出目录
         if args.output:
             out_dir = Path(args.output)
         else:
             out_dir = fp_path.parent
         out_dir.mkdir(parents=True, exist_ok=True)
 
-        # 绘制 Floorplan
-        fp_img = out_dir / f"{fp_path.stem}_floorplan.png"
-        draw_floorplan(blocks, chip_width, output_image=str(fp_img),
-                       show_labels=not args.no_labels, dpi=args.dpi)
+        # 绘制 Floorplan（外框）
+        if getattr(args, 'draw_fp', True):
+            fp_img = out_dir / f"{_clean_stem(fp_path.stem)}_floorplan.png"
+            draw_floorplan(blocks, chip_width, output_image=str(fp_img),
+                           show_labels=not args.no_labels, dpi=args.dpi)
 
-        # 绘制 B-tree（如果有对应的 .Btree 文件）
-        if args.btree:
-            bt_path = Path(args.btree)
-        else:
-            bt_path = fp_path.with_suffix(".Btree")
+        # 绘制 B-tree（树）
+        if getattr(args, 'draw_btree', True):
+            if args.btree:
+                bt_path = Path(args.btree)
+            else:
+                bt_path = fp_path.with_suffix(".Btree")
 
-        if bt_path.exists():
-            root_id, children = parse_btree_file(str(bt_path), num_blocks)
-            if root_id >= 0:
-                bt_img = out_dir / f"{fp_path.stem}_btree.png"
-                draw_btree(root_id, children, block_names,
-                           output_image=str(bt_img), dpi=args.dpi)
-        else:
-            print("未找到对应的 .Btree 文件，跳过树图绘制")
+            if bt_path.exists():
+                root_id, children = parse_btree_file(str(bt_path), num_blocks)
+                if root_id >= 0:
+                    bt_img = out_dir / f"{_clean_stem(fp_path.stem)}_btree.png"
+                    draw_btree(root_id, children, block_names,
+                               output_image=str(bt_img), dpi=args.dpi)
+            else:
+                print("未找到对应的 .Btree 文件，跳过树图绘制")
 
         return
 
