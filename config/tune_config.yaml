@@ -1,13 +1,13 @@
 # 指定要调优的算法模式（与 --algo 一致）
-algo: 1 # 0=SA, 1=GMS, ...
+algo: 0 # 0=SA, 1=GMS, ...
 
 # 指定要扫描的参数（如algo中的r）
-parameter: "gamma"
+parameter: "alpha"
 
 # 范围扫描参数
-start: 300
-end: 310
-step: 5
+start: 0.0
+end: 0.4
+step: 0.1
 
 # 每个参数值运行的实验次数
 num_runs_per_value: 10

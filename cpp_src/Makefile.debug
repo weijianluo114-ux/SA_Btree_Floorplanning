@@ -41,7 +41,9 @@ DEPS := $(OBJ:.o=.d)
 .DEFAULT_GOAL := all
 -include $(DEPS)
 
-# 单一 stamp 文件，内容记录最近一次使用的 CURVE_MODE 与 DEBUG_COST_LOG
+# 单一 stamp 文件，内容记录最近一次使用的 GXXFLAGS 与各模式宏。
+# 任一内容变化（如改 -Og→-O3、切换 CURVE_MODE 等）都会让 stamp mtime 更新，
+# 从而强制重编（因为 .o 依赖 stamp）。
 BUILD_STAMP := $(BIN_DIR)/.build_mode
 
 # 默认目标
@@ -61,7 +63,7 @@ $(EXE): $(OBJ)
 FORCE:
 
 $(BUILD_STAMP): FORCE | $(BIN_DIR)
-	@printf '%s\n' 'CURVE_MODE=$(CURVE_MODE)' 'DEBUG_COST_LOG=$(DEBUG_COST_LOG)' 'SNAPSHOT_MODE=$(SNAPSHOT_MODE)' > $@.tmp
+	@printf '%s\n' 'GXXFLAGS=$(GXXFLAGS)' 'CURVE_MODE=$(CURVE_MODE)' 'DEBUG_COST_LOG=$(DEBUG_COST_LOG)' 'SNAPSHOT_MODE=$(SNAPSHOT_MODE)' > $@.tmp
 	@if cmp -s $@ $@.tmp; then rm -f $@.tmp; else mv -f $@.tmp $@; fi
 
 # 显式头文件依赖：确保改 algos_config.h 等头文件一定触发重编

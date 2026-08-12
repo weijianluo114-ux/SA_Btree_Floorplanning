@@ -4,13 +4,11 @@
 // ========== SA 算法配置 ==========
 struct SA_config
 {
-    double P = 0.95; // 初始接受概率，用于计算 T0
-    double r = 0.9;  // 原始(b100)的：算法衰减系数
-    // double r = 0.85;           // 温度衰减系数
+    double P = 0.95;           // 初始接受概率，用于计算 T0
+    double r = 0.85;           // 原始(b100)的：算法衰减系数
     double epsilon = 1e-4;     // 最低温度阈值
     double reject_rate = 0.99; // 最大拒绝率
-    // int k = 20;                // 原始(b100)的：每块试探次数系数 (N = k * num_hardblocks)
-    int k = 40; // 每块试探次数系数 (N = k * num_hardblocks)
+    int k = 40;                // 每块试探次数系数 (N = k * num_hardblocks)
     // 操作概率 (当前为均匀 rand()%3，可扩展)
     double op_prob[3] = {1.0 / 3, 1.0 / 3, 1.0 / 3};
     double t0_block_divisor = 10.0; // T0 = -cost * (n / divisor) / log(P)
@@ -27,11 +25,11 @@ struct SA_config
 struct FastSA_config
 {
     double t1_amplify = 1.0;          // T1 放大系数: T1 = t1_amplify * |Δavg / ln(P)|
-    double P = 0.999;                 // 初始接受概率，用于计算 T1
+    double P = 0.997;                 // 初始接受概率，用于计算 T1
     double c = 100.0;                 // 论文推荐 c=100
     int k = 7;                        // 论文推荐 k=7
-    int max_iter = 9000000;           // 最大迭代次数（安全上限）
-    int max_consecutive_reject = 200; // 连续拒绝阈值
+    int max_iter = 3000000;           // 最大迭代次数（安全上限）
+    int max_consecutive_reject = 150; // 连续拒绝阈值
     double min_temp = 1e-5;           // 最低温度阈值
     int sample_size = 1000;           // 预采样大小
     double ewma_alpha = 0.4;          // EWMA 平滑系数
@@ -56,11 +54,11 @@ struct SawTooth_FastSA_config
     int REHEAT_THRESHOLD = 100;         // 连续拒绝阈值
     double REHEAT_ROLLBACK_RATIO = 0.6; // 回火时 n 回退比例
 
-    double P = 0.999;                 // 初始接受概率，用于计算 T1
+    double P = 0.997;                 // 初始接受概率，用于计算 T1
     double c = 100.0;                 // 论文推荐 c=100
     int k = 7;                        // 论文推荐 k=7
-    int max_iter = 2000000;           // 最大迭代次数（安全上限）
-    int max_consecutive_reject = 250; // 连续拒绝阈值
+    int max_iter = 3000000;           // 最大迭代次数（安全上限）
+    int max_consecutive_reject = 150; // 连续拒绝阈值
     double min_temp = 1e-5;           // 最低温度阈值
     int sample_size = 1000;           // 预采样大小
     double ewma_alpha = 0.4;          // EWMA 平滑系数

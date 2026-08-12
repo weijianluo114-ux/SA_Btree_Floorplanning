@@ -557,7 +557,6 @@ Cost CalculateCost()
 
         wirelength += (x_max - x_min) + (y_max - y_min); // 计算HPWL
     }
-
     // 将当前的cost存储下来
     Cost c;
     c.width = width;
@@ -584,43 +583,43 @@ Cost CalculateCost()
     // double R_cost = (1.0 - R) / ar_norm;     // 计算长宽比惩罚。这里希望 R 尽量接近 1，也就是版图尽量接近正方形；偏离 1 越多，惩罚越大
 
     // 全局面积违规 A'（公式 11，固定轮廓为正方形，W0 = H0 = W）
-    double A_prime = 0.0;
+    double A_O = 0.0;
     if (height <= W && width <= W)
-        A_prime = 0.0;
+        A_O = 0.0;
     else if (height <= W && width > W)
-        A_prime = (double)(width - W) * W; // (W' - W0) * H0
+        A_O = (double)(width - W) * W; // (W' - W0) * H0
     else if (width <= W && height > W)
-        A_prime = (double)(height - W) * W; // (H' - H0) * W0
+        A_O = (double)(height - W) * W; // (H' - H0) * W0
     else
-        A_prime = (double)width * height - (double)W * W; // W'*H' - W0*H0
+        A_O = (double)width * height - (double)W * W; // W'*H' - W0*H0
 
-    // 单模块超额长度违规 L'（公式 12、13）
-    double L_prime = 0.0;
+    // 单模块超额面积违规 L'（面积式变体）：
+    // 累加每个模块“框外部分的面积 = 模块面积 − 模块落在目标外框 [0,W]×[0,W] 内的面积”。
+    //   - 完全在框内                → 0
+    //   - 完全越界（左下角越过外框）→ 等于模块自身面积
+    //   - 仅一个方向越界            → 越界长条面积 = 越界长度 × 该方向对应的块边长
+    //                                    （width/height 已反映旋转状态）
+    //   - 两个方向都越界（部分在内）→ 模块面积 − 框内部分面积
+    double A_prime = 0.0;
+    int x_r, y_t;
     for (int i = 0; i < num_hardblocks; i++)
     {
-        int x_r = hardblocks[i].x + hardblocks[i].width;
-        int y_t = hardblocks[i].y + hardblocks[i].height;
-        if (y_t <= W && x_r <= W)
-            continue; // 未越界
-        else if (y_t <= W && x_r > W)
-        {
-            double dx = x_r - W;
-            L_prime += dx * dx;
-        }
-        else if (x_r <= W && y_t > W)
-        {
-            double dy = y_t - W;
-            L_prime += dy * dy;
-        }
-        else
-        {
-            double dx = x_r - W;
-            double dy = y_t - W;
-            L_prime += dx * dx + dy * dy;
-        }
+        x_r = hardblocks[i].x + hardblocks[i].width;
+        y_t = hardblocks[i].y + hardblocks[i].height;
+
+        // 快速跳过：模块完全在目标外框内（左下角坐标恒 >=0），贡献必为 0
+        if (x_r <= W && y_t <= W)
+            continue;
+        // 模块与目标外框 [0,W]×[0,W] 的交集面积（坐标恒 >=0，min/max 仅作兜底）
+        double ix0 = hardblocks[i].x, iy0 = hardblocks[i].y;
+        double ix1 = min(x_r, W), iy1 = min(y_t, W);
+        double in_area = (ix1 > ix0 && iy1 > iy0) ? (ix1 - ix0) * (iy1 - iy0) : 0.0;
+
+        double block_area = (double)hardblocks[i].width * hardblocks[i].height;
+        A_prime += block_area - in_area; // 框外部分面积
     }
 
-    double phi = A_prime + L_prime;                 // Φ = A' + L'
+    double phi = A_O + A_prime;                     // Φ = A_O + A'
     double phi_star = 0.21 * (double)W * (double)W; // Φ* = 0.21*(W0*H0) = 0.21*W²
     double penalty_cost = phi / phi_star;           // 惩罚归一化项
 
@@ -658,11 +657,11 @@ Cost CalculateCost()
         g_debug_logger->info(
             "Total_Moves={} | "
             "area_cost={:.6f} wl_cost={:.6f} R_cost={:.6f} | "
-            "A_prime={:.6f} L_prime={:.6f} | "
+            "A_O={:.6f} A_prime={:.6f} | "
             "phi={:.6f} phi_star={:.6f} penalty_cost={:.6f} | cost={:.6f}",
             dbg_total,
             area_cost, wl_cost, R_cost,
-            A_prime, L_prime,
+            A_O, A_prime,
             phi, phi_star, penalty_cost, c.cost);
     }
 #endif
@@ -1729,6 +1728,7 @@ void SawTooth_FastSA(const SawTooth_FastSA_config &cfg)
             // ——— 重要：回火后将 last_improve_iter 重置为当前 iter，避免立即再次回火 ———
             last_improve_iter = iter;
             reheat_count++;
+            // cout << "回火次数：" << reheat_count << "\n";
             // new----------------------------------------------
             reheat_plus++;
             // new_end----------------------------------------------

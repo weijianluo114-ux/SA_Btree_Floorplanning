@@ -9,11 +9,13 @@
 circuit: n50 # 使用的电路: n10/n30/n50/n100/n200/n300
 white_space_ratio: 0.1 # 空白率
 num_runs: 1 # 运行次数
-algo: 0 # 算法模式: 0=原始算法, 1=FastSA, 2=SawToothFastSA
+algo: 2 # 算法模式: 0=原始算法, 1=FastSA, 2=SawToothFastSA
 
 # ---- 微调 (tune) 和绘制 ----
 tune: false # true=启用微调模式
-draw_fp: true # 是否启用绘制外框 (floorplan)
+
+# ---- 绘制 ----
+draw_fp: false # 是否启用绘制外框 (floorplan)
 draw_btree: false # 是否启用绘制树 (B*-tree)
 draw_curve: false # 是否绘制模拟退火曲线
 
@@ -30,7 +32,7 @@ redraw: false # true=补绘制模式（不重新运行，仅对已有结果绘�
 redraw_output: log/2026_08_12/18-29-42_n100_a1_wsr010_tot1_curve/output # 补绘制的 output 目录相对路径，如 log/2026_08_12/01-09-20_n10_a1_wsr010_tot40/output
 
 # ---- debug模式 ----
-debug_log: false # 是否启用 spdlog 调试日志
+debug_log: true # 是否启用 spdlog 调试日志
 
 # ---- 文件/路径（通常保持默认）----
 executable: ./bin/hw3_dbg # 可执行文件路径（相对脚本位置）

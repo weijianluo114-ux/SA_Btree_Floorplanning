@@ -377,6 +377,55 @@ ALGO_TO_BLOCK = {
     2: "SawTooth_FastSA",
 }
 
+ALGO_STRUCT = {
+    0: "SA_config",
+    1: "FastSA_config",
+    2: "SawTooth_FastSA_config",
+}
+
+
+def _algos_config_h_text() -> str:
+    """读取 cpp_src/algos_config.h 的源码文本；不存在则返回空串。"""
+    hdr = get_script_dir() / "cpp_src" / "algos_config.h"
+    if not hdr.exists():
+        return ""
+    return hdr.read_text(encoding="utf-8", errors="replace")
+
+
+def _extract_struct_source(struct_name: str, text: str) -> str:
+    """从 algos_config.h 中截取 'struct <name> { ... };' 的源码片段。"""
+    start = text.find(f"struct {struct_name}")
+    if start == -1:
+        return ""
+    end = text.find("};", start)
+    if end == -1:
+        end = len(text)
+    else:
+        end += 2
+    return text[start:end].strip()
+
+
+def _append_algo_struct(config_path, algo: int) -> None:
+    """把 algos_config.h 中对应算法的配置结构体源码，以注释形式追加到 config.yaml。
+
+    用 '#' 前缀逐行写入，保证 config.yaml 仍是合法 YAML（可被 yaml.safe_load 读取）。
+    """
+    struct_name = ALGO_STRUCT.get(algo, "SA_config")
+    block_name = ALGO_TO_BLOCK.get(algo, "SA")
+    src = _extract_struct_source(struct_name, _algos_config_h_text())
+
+    with open(config_path, "a", encoding="utf-8") as f:
+        f.write("\n# ============================================================\n")
+        f.write(f"# 本次运行的算法配置结构体: {struct_name}  (algo={algo}, {block_name})\n")
+        f.write("# 来源: cpp_src/algos_config.h（默认值；若 --config 传 JSON 可覆盖部分字段）\n")
+        f.write("# ============================================================\n")
+        if src:
+            for line in src.splitlines():
+                f.write("# " + line + "\n")
+        else:
+            f.write(f"# (未找到 {struct_name} 源码)\n")
+        f.write("# ============================================================\n")
+
 # ========== 公共统计输出函数（减少 main 和 run_tuning 的代码重复） ==========
 
 # 统计列名（与 _make_metric_row 的列顺序一致，从索引 2 开始）
@@ -563,13 +612,11 @@ def print_statistics_to_console(table_data, algo):
 
 # ========== 种子管理函数 ==========
 
-def load_or_generate_seeds(num_runs: int, seed_file_arg: Optional[str],
-                           script_dir: Path, algo_tag: str,
-                           timestamp: str) -> List[int]:
+def load_or_generate_seeds(num_runs: int, seed_file_arg: Optional[str]) -> List[int]:
     """
     统一处理种子逻辑：
     - 如果 seed_file_arg 存在且文件可读，读取之
-    - 否则生成 num_runs 个随机种子并保存到默认路径
+    - 否则生成 num_runs 个随机种子（不再写入 seeds/ 文件夹）
     返回种子列表
     """
     if seed_file_arg is not None:
@@ -587,23 +634,11 @@ def load_or_generate_seeds(num_runs: int, seed_file_arg: Optional[str],
                 print(f"补充种子: {seeds[-1]}")
             return seeds
         else:
-            print(f"种子文件不存在，生成 {num_runs} 个随机种子并保存到 {seed_path}")
-            seeds = generate_seeds(num_runs)
-            seed_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(seed_path, "w") as sf:
-                for s in seeds:
-                    sf.write(f"{s}\n")
-            return seeds
-    else:
-        seed_file = script_dir / f"./seeds/seeds_{num_runs}{algo_tag}_{timestamp}.txt"
-        print(f"生成 {num_runs} 个随机种子...")
-        seeds = generate_seeds(num_runs)
-        seed_file.parent.mkdir(parents=True, exist_ok=True)
-        with open(seed_file, "w") as sf:
-            for s in seeds:
-                sf.write(f"{s}\n")
-        print(f"种子已保存到 {seed_file}")
-        return seeds
+            print(f"警告: 种子文件不存在: {seed_path}，改用随机种子")
+
+    # 生成 num_runs 个随机种子（仅本次运行使用，不落盘）
+    print(f"生成 {num_runs} 个随机种子...")
+    return generate_seeds(num_runs)
 
 
 # ========== 编译与路径管理 ==========
@@ -645,8 +680,7 @@ def create_run_dirs(circuit: str, white_space_ratio: float,
             ├── config.yaml
             ├── output/
             ├── figures/
-            ├── curves/
-            └── seeds/
+            └── curves/
     """
     now = datetime.now()
     date_str = now.strftime("%Y_%m_%d")
@@ -669,7 +703,7 @@ def create_run_dirs(circuit: str, white_space_ratio: float,
     run_dir = date_dir / run_name
 
     # 创建所有子目录
-    for sub in ["output", "figures", "curves", "seeds"]:
+    for sub in ["output", "figures", "curves"]:
         (run_dir / sub).mkdir(parents=True, exist_ok=True)
 
     log_file = run_dir / "run.log"
@@ -726,6 +760,9 @@ def write_config_yaml(run_dir: Path, args: Namespace) -> None:
     }
     with open(config_path, "w") as f:
         yaml.dump(content, f, default_flow_style=False, allow_unicode=True)
+
+    # ---- 追加本次运行的算法配置结构体（注释形式，保持 YAML 可解析）----
+    _append_algo_struct(config_path, args.algo)
 
 def resolve_common_paths(script_dir: Path, args) -> Tuple[Path, str, str, str]:
     """解析可执行文件和测试文件路径(exec, hardblocks, nets, terminals)"""
@@ -807,7 +844,6 @@ def run_tuning(args):
     #     output/                               (val{pv}_run{r}.floorplan)
     #     curves/                               (param_{value}/curve_data.csv)
     #     figures/                              (曲线图)
-    #     seeds/                                (种子快照)
     #     summary.txt                           (整体汇总)
     now = datetime.now()
     date_str = now.strftime("%Y_%m_%d")
@@ -815,6 +851,23 @@ def run_tuning(args):
     tune_name = f"{time_str}_tune_a{algo}_{param_name}_{start}-{end}"
     tune_log_root = script_dir / "log" / date_str / tune_name
     ensure_dir(tune_log_root)
+
+    # ---- 调优模式 config.yaml：记录被调优的算法/参数、范围、步长、测试数 ----
+    tune_cfg_path = tune_log_root / "config.yaml"
+    tune_content = {
+        "mode": "tune",
+        "algo": algo,
+        "algorithm": block_name,                # 如 FastSA / SawTooth_FastSA
+        "tuned_parameter": param_name,          # 被调优的参数名（去掉块名前缀）
+        "range": {"start": start, "end": end},  # 扫描范围
+        "step": step,                           # 步长
+        "num_runs_per_value": num_runs_per_value,  # 每个参数值的测试数量
+        "fixed_params": fixed_params,           # 固定参数
+        "timestamp": datetime.now().strftime('%Y-%m-%d_%H-%M-%S'),
+    }
+    with open(tune_cfg_path, "w", encoding="utf-8") as f:
+        yaml.dump(tune_content, f, default_flow_style=False, allow_unicode=True)
+    _append_algo_struct(tune_cfg_path, algo)
 
     # 编译（makefile.log 写入 tune_log_root/，与统计日志同级，便于 debug 编译问题）
     compile_and_check(exec_path, script_dir, args.skip_make,
@@ -831,9 +884,6 @@ def run_tuning(args):
 
     figure_root = tune_log_root / "figures"
     ensure_dir(figure_root)
-
-    seeds_root = tune_log_root / "seeds"
-    ensure_dir(seeds_root)
 
     config_dir = script_dir / "./config"
     ensure_dir(config_dir)
@@ -868,19 +918,12 @@ def run_tuning(args):
         write_log_header(run_log_file, hardblocks, nets, terminals,
                          args.white_space_ratio, num_runs_per_value)
 
-        # 本参数的输出目录与种子目录（按参数值分类）
+        # 本参数的输出目录（按参数值分类）
         output_param_dir = output_dir / folder_name
         ensure_dir(output_param_dir)
-        seeds_param_dir = seeds_root / folder_name
-        ensure_dir(seeds_param_dir)
 
-        # 每个参数值使用独立的种子集，保存到 seeds/param_*/
-        seeds = load_or_generate_seeds(num_runs_per_value, args.seed_file,
-                                       script_dir, algo_tag, timestamp)
-        seed_snapshot = seeds_param_dir / f"seeds_{num_runs_per_value}{algo_tag}_{timestamp}.txt"
-        with open(seed_snapshot, "w") as sf:
-            for s in seeds:
-                sf.write(f"{s}\n")
+        # 每个参数值使用独立的随机种子集（不再写入文件）
+        seeds = load_or_generate_seeds(num_runs_per_value, args.seed_file)
 
         param_table_data = []
         param_mode_desc = f"调优 {block_name}.{param_name}={param_val}"
@@ -1260,13 +1303,7 @@ def main():
             args.num_runs = 10
     
     # ===== 种子 =====
-    seeds = load_or_generate_seeds(args.num_runs, args.seed_file,
-                                script_dir, algo_tag, timestamp)
-    # 种子快照写入 run_dir/seeds/
-    seed_snapshot = run_dir / "seeds" / f"seeds_{args.num_runs}{algo_tag}_{timestamp}.txt"
-    with open(seed_snapshot, "w") as sf:
-        for s in seeds:
-            sf.write(f"{s}\n")
+    seeds = load_or_generate_seeds(args.num_runs, args.seed_file)
             
     # 准备日志文件（写入头部）
     write_log_header(log_file, hardblocks, nets, terminals, args.white_space_ratio, args.num_runs)
