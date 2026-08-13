@@ -8,14 +8,17 @@
 # ---- 电路与基础参数 ----
 circuit: n50 # 使用的电路: n10/n30/n50/n100/n200/n300
 white_space_ratio: 0.1 # 空白率
-num_runs: 5 # 运行次数
+num_runs: 10 # 运行次数
 algo: 2 # 算法模式: 0=原始算法, 1=FastSA, 2=SawToothFastSA
+
+# ---- 重要实验标记 ----
+important: false # true=标记本次为重要实验，日志目录名追加 _important 后缀
 
 # ---- 微调 (tune) 和绘制 ----
 tune: false # true=启用微调模式
 
 # ---- 绘制 ----
-draw_fp: false # 是否启用绘制外框 (floorplan)
+draw_fp: true # 是否启用绘制外框 (floorplan)
 draw_btree: false # 是否启用绘制树 (B*-tree)
 draw_curve: false # 是否绘制模拟退火曲线
 
@@ -35,8 +38,8 @@ redraw_output: log/2026_08_12/18-29-42_n100_a1_wsr010_tot1_curve/output # 补绘
 debug_log: false # 是否启用 spdlog 调试日志
 
 # ---- 种子控制 ----
-use_seed: false # 是否使用指定种子文件（配合 seed_file；种子不足补随机、多余取前 N 个）
-seed_file: null # 种子文件路径（use_seed=true 时生效，null=随机生成）
+use_seed: true # 是否使用指定种子文件（配合 seed_file；种子不足补随机、多余取前 N 个）
+seed_file: log/2026_08_13/14-54-03_n50_a2_wsr010_tot20_important/seeds/seeds.txt # 种子文件路径（use_seed=true 时生效，null=随机生成）
 
 # ---- 文件/路径（通常保持默认）----
 executable: ./bin/hw3_dbg # 可执行文件路径（相对脚本位置）

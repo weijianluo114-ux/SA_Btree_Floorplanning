@@ -678,12 +678,13 @@ def write_log_header(log_file: Path, hardblocks: str, nets: str, terminals: str,
 def create_run_dirs(circuit: str, white_space_ratio: float,
                     algo: int, num_runs: int,
                     draw_fp: bool = False, draw_curve: bool = False,
-                    draw_btree: bool = False) -> Tuple[Path, Path]:
+                    draw_btree: bool = False,
+                    important: bool = False) -> Tuple[Path, Path]:
     """
     创建统一日志目录结构，返回 (run_dir, log_file)。
     
     目录结构：
-        log/YYYY_MM_DD/HH-MM-SS_{circuit}_a{algo}_wsrXXX_tot{N}_fp_curve/
+        log/YYYY_MM_DD/HH-MM-SS_{circuit}_a{algo}_wsrXXX_tot{N}_fp_curve[_important]/
             ├── run.log
             ├── config.yaml
             ├── output/
@@ -702,6 +703,8 @@ def create_run_dirs(circuit: str, white_space_ratio: float,
         suffix += "_btree"
     if draw_curve:
         suffix += "_curve"
+    if important:
+        suffix += "_important"
 
     script_dir = get_script_dir()
     log_root = script_dir / "log"
@@ -762,6 +765,7 @@ def write_config_yaml(run_dir: Path, args: Namespace) -> None:
         "log_file": str(args.log_file) if args.log_file else None,
         "seed_file": str(args.seed_file) if args.seed_file else None,
         "use_seed": getattr(args, "use_seed", False),
+        "important": getattr(args, "important", False),
         "config_source": str(getattr(args, "config_path", "")),
         "timestamp": datetime.now().strftime('%Y-%m-%d_%H-%M-%S'),
         "play_snapshots": getattr(args, "play_snapshots", False),
@@ -1250,6 +1254,10 @@ def parse_args(argv=None):
     parser.add_argument("--snapshot_duration_ms", type=int,
                         default=_cfg_value(cfg, "snapshot_duration_ms", 500),
                         help="快照动画每帧停留毫秒数（默认500）")
+    
+    parser.add_argument("--important", action=argparse.BooleanOptionalAction,
+                    default=_cfg_value(cfg, "important", False),
+                    help="标记本次实验为重要实验（日志目录名追加 _important 后缀）")
     args = parser.parse_args(remaining)
     args.config_path = cfg_path
     return args
@@ -1292,7 +1300,8 @@ def main():
                                         args.num_runs,
                                         args.draw_fp,
                                         args.draw_curve,
-                                        args.draw_btree,)
+                                        args.draw_btree,
+                                        important=args.important)
     write_config_yaml(run_dir, args)
 
     # output/log: auto-generate in run_dir by default; or explictly specify a directory

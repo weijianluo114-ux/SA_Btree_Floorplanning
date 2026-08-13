@@ -595,7 +595,7 @@ def run_batch(args):
 
     for idx, (fp_path, bt_path) in enumerate(pairs, start=1):
         stem = _clean_stem(fp_path.stem)  # 如 "run1_2026-06-09_12:00:00" -> "run1"
-        print(f"\n[{idx}/{len(pairs)}] 处理 {stem}")
+        print(f"[{idx}/{len(pairs)}] 处理 {stem}")
 
         # --- 绘制 Floorplan（外框）---
         if getattr(args, 'draw_fp', True):

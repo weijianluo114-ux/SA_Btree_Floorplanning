@@ -665,15 +665,7 @@ Cost CalculateCost()
     //     width_penalty = ((double)width / W);
     // if (height > W)
     //     height_penalty = ((double)height / W);
-    // if (width > W) // 如果当前版图宽度超过固定边界 W，就加宽度惩罚。超得越多，这项越大。
-    //     width_penalty = ((double)width / W);
-    // if (height > W)
-    //     height_penalty = ((double)height / W);
     // c.cost = area_cost + wl_cost + R_cost + width_penalty + height_penalty; // （原来）把所有代价项加起来，得到最终总成本。模拟退火后面就是用这个 c.cost 来判断当前布局好不好、要不要接受
-
-    // double area_weight = 0.0;
-    // double wl_weight = 0.4 - area_weight;
-    // c.cost = area_weight * area_cost + wl_weight * wl_cost + (0.5 - area_weight - wl_weight) * R_cost + 0.25 * width_penalty + 0.25 * height_penalty; // （更改后）把所有代价项加起来，得到最终总成本。模拟退火后面就是用这个 c.cost 来判断当前布局好不好、要不要接受
 
     double alpha = COST_ALPHA;
     double beta = COST_BETA;
