@@ -8,7 +8,8 @@
 # ---- 电路与基础参数 ----
 circuit: n50 # 使用的电路: n10/n30/n50/n100/n200/n300
 white_space_ratio: 0.1 # 空白率
-num_runs: 10 # 运行次数
+target_aspect_ratio: 1 # 目标宽长比 W/H（支持 1/2/3，1=正方形）
+num_runs: 1 # 运行次数
 algo: 2 # 算法模式: 0=原始算法, 1=FastSA, 2=SawToothFastSA
 
 # ---- 重要实验标记 ----
@@ -18,6 +19,7 @@ important: false # true=标记本次为重要实验，日志目录名追加 _imp
 tune: false # true=启用微调模式
 
 # ---- 绘制 ----
+draw_init_floorplan: true # true=绘制并保存初始布局（初始化树后的布局）到 figures/init_floorplan/
 draw_fp: true # 是否启用绘制外框 (floorplan)
 draw_btree: false # 是否启用绘制树 (B*-tree)
 draw_curve: false # 是否绘制模拟退火曲线
@@ -55,3 +57,5 @@ fp_dpi: 120 # floorplan 图片分辨率
 record_curve: false # 是否记录模拟退火过程中的详细参数曲线
 
 tune_config: ./config/tune_config.yaml # 微调配置文件路径（默认）
+
+color_by_net: false # true=按网表给模块着色：同一网表内模块同色，不同网表不同色

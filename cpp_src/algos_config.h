@@ -16,9 +16,10 @@ struct SA_config
     int max_seconds_divisor = 5;    // 阶段超时: max_seconds = (n / divisor)^2
 
     // —— 新代价函数权重（Huang et al. 2020 惩罚函数框架）——
-    double alpha = 0.45; // 面积项权重 α
-    double beta = 0.45;  // 线长项权重 β
-    double gamma = 1.0;  // 惩罚项权重 γ
+    double alpha = 0.45;              // 面积项权重 α
+    double beta = 0.45;               // 线长项权重 β
+    double gamma = 1.0;               // 惩罚项权重 γ
+    double target_aspect_ratio = 1.0; // 目标宽长比 W/H（支持 1/2/3，1=正方形）
 };
 
 // ========== FastSA 算法配置 ==========
@@ -36,9 +37,10 @@ struct FastSA_config
     int max_seconds_divisor = 5.0;    // 阶段超时: max_seconds = (n / divisor)^2
 
     // —— 新代价函数权重（Huang et al. 2020 惩罚函数框架）——
-    double alpha = 0.45; // 面积项权重 α
-    double beta = 0.45;  // 线长项权重 β
-    double gamma = 1.0;  // 惩罚项权重 γ
+    double alpha = 0.45;              // 面积项权重 α
+    double beta = 0.45;               // 线长项权重 β
+    double gamma = 1.0;               // 惩罚项权重 γ
+    double target_aspect_ratio = 1.0; // 目标宽长比 W/H（支持 1/2/3，1=正方形）
 };
 
 // ========== SawTooth_FastSA 算法配置 ==========
@@ -65,9 +67,10 @@ struct SawTooth_FastSA_config
     int max_seconds_divisor = 5.0;    // 阶段超时: max_seconds = (n / divisor)^2
 
     // —— 新代价函数权重（Huang et al. 2020 惩罚函数框架）——
-    double alpha = 0.45; // 面积项权重 α
-    double beta = 0.45;  // 线长项权重 β
-    double gamma = 1.0;  // 惩罚项权重 γ
+    double alpha = 1.0;               // 面积项权重 α
+    double beta = 0.0;                // 线长项权重 β
+    double gamma = 1.0;               // 惩罚项权重 γ
+    double target_aspect_ratio = 3.0; // 目标宽长比 W/H（支持 1/2/3，1=正方形）
 };
 
 #endif // ALGOS_CONFIG_H

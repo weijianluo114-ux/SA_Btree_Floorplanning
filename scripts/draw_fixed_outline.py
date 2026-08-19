@@ -12,6 +12,7 @@
     # 单文件模式
     python draw_fixed_outline.py --floorplan ../output/xxx/run1_2026-06-09_12:00:00.floorplan
 """
+import matplotlib
 import numpy as np
 import matplotlib.cm as cm
 import argparse
@@ -32,11 +33,12 @@ def _clean_stem(stem: str) -> str:
 
 def parse_floorplan_file(file_path):
     """
-    解析 .floorplan 文件，返回 (chip_width, blocks)
+    解析 .floorplan 文件，返回 (chip_width, chip_height, blocks)
     blocks: list of (name, x, y, width, height)
     """
     blocks = []
     chip_width = None
+    chip_height = None
 
     with open(file_path, 'r') as f:
         lines = [line.strip() for line in f if line.strip()]
@@ -45,6 +47,12 @@ def parse_floorplan_file(file_path):
         match = re.match(r'W:\s*(\d+)', lines[0])
         if match:
             chip_width = int(match.group(1))
+        lines = lines[1:]
+
+    if lines and lines[0].startswith('H:'):
+        match = re.match(r'H:\s*(\d+)', lines[0])
+        if match:
+            chip_height = int(match.group(1))
         lines = lines[1:]
 
     if lines and 'Wirelength' in lines[0]:
@@ -69,7 +77,7 @@ def parse_floorplan_file(file_path):
             width, height = p3, p4
         blocks.append((name, x, y, width, height))
 
-    return chip_width, blocks
+    return chip_width, chip_height, blocks
 
 # ==============================================================
 #  第1.5部分：解析 .pl 和 .nets 文件（新增）
@@ -139,6 +147,23 @@ def _build_block_dict(blocks):
     """
     return {b[0]: (b[1], b[2], b[3], b[4]) for b in blocks}
 
+def _build_net_block_colors(nets):
+    """
+    按网表给模块分配颜色：同一网表内模块同色，不同网表不同色。
+    - 只处理模块（sb*），引脚不上色
+    - 一个模块属于多个网表时，取第一个所属网表的颜色
+    - 未出现在任何网表的模块不在此映射中（绘图时用默认色）
+    返回 {module_name: (r, g, b)}
+    """
+    colors = {}
+    for i, net in enumerate(nets):
+        # 黄金比例色相步进：相邻网表颜色差异大，任意数量网表都能区分
+        hue = (i * 0.618033988749895) % 1.0
+        rgb = matplotlib.colors.hsv_to_rgb((hue, 0.75, 0.95))
+        for elem in net:
+            if elem.startswith('sb') and elem not in colors:
+                colors[elem] = rgb
+    return colors
 
 def _get_net_positions(net_elements, block_dict, pin_dict):
     """
@@ -351,7 +376,6 @@ def draw_btree(root_id, children, block_names, output_image=None, dpi=300, snap_
     if output_image:
         Path(output_image).parent.mkdir(parents=True, exist_ok=True)
         plt.savefig(output_image, dpi=dpi, bbox_inches='tight')
-        print(f"  二叉树图已保存至: {output_image}")
     else:
         plt.show()
     plt.close()
@@ -361,18 +385,21 @@ def draw_btree(root_id, children, block_names, output_image=None, dpi=300, snap_
 #  第四部分：绘制 floorplan 矩形图
 # ==============================================================
 
-def draw_floorplan(blocks, chip_width=None, output_image=None,
+def draw_floorplan(blocks, chip_width=None, chip_height=None, output_image=None,
                    show_labels=True, dpi=300, algo=0,
                    nets=None, block_dict=None, pin_dict=None,
-                   max_nets_draw=None, snap_title=None):
+                   max_nets_draw=None, snap_title=None, color_by_net=False):
     """
     绘制矩形布局图，并可选择叠加网表连线。
     
     新增参数:
+        chip_width: 目标外框宽度（来自 .floorplan 的 W:）
+        chip_height: 目标外框高度（来自 .floorplan 的 H:，缺省时按正方形取 chip_width）
         nets: list of list of str，网表数据（来自 parse_nets_file）
         block_dict: {name: (x, y, w, h)} 模块位置字典
         pin_dict: {name: (x, y)} 引脚坐标字典
         max_nets_draw: 最多绘制的网表数
+        color_by_net: 为 True 时，同一网表内的模块涂同色、不同网表不同色
     """
     if not blocks:
         print("  没有可绘制的块")
@@ -384,18 +411,20 @@ def draw_floorplan(blocks, chip_width=None, output_image=None,
     max_y = max(b[2] + b[4] for b in blocks)
 
     if chip_width is not None:
-        target = chip_width
-        if max_x > target or max_y > target:
+        target_w = chip_width
+        target_h = chip_height if chip_height is not None else chip_width
+        if max_x > target_w or max_y > target_h:
             line_color = 'red'
             status = "超出目标"
-            limit = max(max_x, max_y, target)
+            limit = max(max_x, max_y, target_w, target_h)
         else:
             line_color = 'green'
             status = "满足目标"
-            limit = target
-        ax.axvline(x=target, color=line_color, linestyle='--', linewidth=2,
-                   label=f'Target W={target} ({status})')
-        ax.axhline(y=target, color=line_color, linestyle='--', linewidth=2)
+            limit = max(target_w, target_h)
+        ax.axvline(x=target_w, color=line_color, linestyle='--', linewidth=2,
+                   label=f'Target W={target_w} ({status})')
+        ax.axhline(y=target_h, color=line_color, linestyle='--', linewidth=2,
+                   label=f'Target H={target_h}')
         ax.set_xlim(0, limit)
         ax.set_ylim(0, limit)
     else:
@@ -403,10 +432,18 @@ def draw_floorplan(blocks, chip_width=None, output_image=None,
         ax.set_xlim(0, limit * 1.02)
         ax.set_ylim(0, limit * 1.02)
 
+    # 按网表给模块上色（同一网表同色、不同网表不同色）
+    net_block_colors = None
+    if color_by_net and nets:
+        net_block_colors = _build_net_block_colors(nets)
+
     for name, x, y, w, h in blocks:
+        facecolor = 'lightblue'
+        if net_block_colors and name in net_block_colors:
+            facecolor = net_block_colors[name]
         rect = patches.Rectangle(
             (x, y), w, h,
-            linewidth=1.5, edgecolor='black', facecolor='lightblue', alpha=0.7
+            linewidth=1.5, edgecolor='black', facecolor=facecolor, alpha=0.7
         )
         ax.add_patch(rect)
         if show_labels:
@@ -425,7 +462,7 @@ def draw_floorplan(blocks, chip_width=None, output_image=None,
     ax.set_ylabel('Y')
     title = f'Floorplan (algo{algo}, {len(blocks)} blocks)'
     if chip_width is not None:
-        title += f' - Target W={chip_width} ({status})'
+        title += f' - Target W={target_w} x H={target_h} ({status})'
     if has_nets:
         n_shown = min(max_nets_draw, len(nets)) if max_nets_draw else len(nets)
         title += f' - Nets: {n_shown}'
@@ -518,7 +555,7 @@ def run_tune(args):
             continue
 
         # 由第一个 floorplan 推断块数
-        _, blocks = parse_floorplan_file(str(pairs[0][0]))
+        _, _, blocks = parse_floorplan_file(str(pairs[0][0]))
         num_blocks = len(blocks) if blocks else args.blocks
         block_names = [f"sb{i}" for i in range(num_blocks)]
 
@@ -528,10 +565,11 @@ def run_tune(args):
         for fp_path, bt_path in pairs:
             stem = _clean_stem(fp_path.stem)
             print(f"\n  [{param_dir.name}] 处理 {stem}")
-            chip_width, blocks = parse_floorplan_file(str(fp_path))
+            chip_width, chip_height, blocks = parse_floorplan_file(str(fp_path))
             if getattr(args, 'draw_fp', True) and blocks:
                 fp_img = out_sub / f"{stem}_floorplan.png"
-                draw_floorplan(blocks, chip_width, output_image=str(fp_img),
+                draw_floorplan(blocks, chip_width, chip_height=chip_height,
+                               output_image=str(fp_img),
                                show_labels=True, dpi=args.dpi, algo=algo)
             root_id, children = parse_btree_file(str(bt_path), num_blocks)
             if getattr(args, 'draw_btree', True) and root_id >= 0:
@@ -573,9 +611,9 @@ def run_batch(args):
         fig_dir = script_dir / "../results/floor_plan_figures" / dir_name
     fig_dir.mkdir(parents=True, exist_ok=True)
 
-    # ---- 新增：如果启用了网表绘制，提前加载 .pl 和 .nets 文件 ----
+    # ---- 如果启用了网表连线 或 按网表着色，提前加载 .pl 和 .nets 文件 ----
     nets_data = None   # (nets, pin_dict)
-    if args.draw_nets:
+    if args.draw_nets or args.color_by_net:
         testcase_dir = (script_dir / "../testcase").resolve()
         pl_path = testcase_dir / f"n{args.blocks}.pl"
         nets_path = testcase_dir / f"n{args.blocks}.nets"
@@ -587,7 +625,7 @@ def run_batch(args):
                   f"{len(pin_dict)} 个引脚 (来自 {pl_path.name}, {nets_path.name})")
         else:
             print(f"警告: 未找到测试用例文件 ({pl_path.name}, {nets_path.name})，"
-                  f"跳过网表绘制")
+                  f"跳过网表连线/着色")
     # ----------------------------------------------------------------
 
     # 预生成块名称列表（用于 B-tree 绘图）
@@ -599,23 +637,28 @@ def run_batch(args):
 
         # --- 绘制 Floorplan（外框）---
         if getattr(args, 'draw_fp', True):
-            chip_width, blocks = parse_floorplan_file(str(fp_path))
+            chip_width, chip_height, blocks = parse_floorplan_file(str(fp_path))
             if blocks:
                 block_dict = _build_block_dict(blocks) if nets_data else None
-                extra_kwargs = {}
-                if nets_data:
-                    extra_kwargs['nets'] = nets_data[0]
-                    extra_kwargs['block_dict'] = block_dict
-                    extra_kwargs['pin_dict'] = nets_data[1]
-                    extra_kwargs['max_nets_draw'] = args.max_nets_draw
-                if nets_data:
+
+                # 带网表连线的图（仅 draw_nets 开启时生成）：可同时按网表上色
+                if nets_data and args.draw_nets:
                     fp_img_nets = fig_dir / f"{stem}_floorplan_with_nets.png"
-                    draw_floorplan(blocks, chip_width, output_image=str(fp_img_nets),
+                    draw_floorplan(blocks, chip_width, chip_height=chip_height,
+                                   output_image=str(fp_img_nets),
                                    show_labels=True, dpi=args.dpi, algo=args.algo,
-                                   **extra_kwargs)
+                                   nets=nets_data[0], block_dict=block_dict,
+                                   pin_dict=nets_data[1],
+                                   max_nets_draw=args.max_nets_draw,
+                                   color_by_net=args.color_by_net)
+
+                # 普通图：仅 color_by_net 开启时传 nets 上色（不传 pin_dict → 不画连线）
                 fp_img = fig_dir / f"{stem}_floorplan.png"
-                draw_floorplan(blocks, chip_width, output_image=str(fp_img),
-                               show_labels=True, dpi=args.dpi, algo=args.algo)
+                draw_floorplan(blocks, chip_width, chip_height=chip_height,
+                               output_image=str(fp_img),
+                               show_labels=True, dpi=args.dpi, algo=args.algo,
+                               nets=(nets_data[0] if (nets_data and args.color_by_net) else None),
+                               color_by_net=args.color_by_net)
             else:
                 print(f"  跳过 Floorplan: 无有效块数据")
 
@@ -677,6 +720,8 @@ def main(args=None):
         # --- 绘制开关（默认都画；test_scripts.py 可分别控制）---
         parser.add_argument("--draw_fp", action=argparse.BooleanOptionalAction, default=True,
                             help="是否绘制 floorplan（外框）图")
+        parser.add_argument("--color_by_net", action="store_true",
+                            help="按网表给模块着色：同一网表内模块同色，不同网表不同色")
         parser.add_argument("--draw_btree", action=argparse.BooleanOptionalAction, default=True,
                             help="是否绘制 B*-tree（树）图")
         
@@ -703,7 +748,7 @@ def main(args=None):
             sys.exit(1)
 
         # 自动推断 blocks 数量
-        chip_width, blocks = parse_floorplan_file(str(fp_path))
+        chip_width, chip_height, blocks = parse_floorplan_file(str(fp_path))
         if not blocks:
             print("错误: 未能解析任何块，请检查文件格式", file=sys.stderr)
             sys.exit(1)
@@ -713,16 +758,13 @@ def main(args=None):
 
         # ---- 新增：单文件模式的网表加载 ----
         nets_data = None
-        if args.draw_nets:
+        if args.draw_nets or args.color_by_net:
             testcase_dir = (fp_path.parent.parent / "testcase").resolve()
             if not testcase_dir.exists():
-                # 尝试从脚本相对路径查找
                 testcase_dir = (Path(__file__).resolve().parent / "../testcase").resolve()
-            # 根据 blocks 数量推断 n 值
-            n_val = num_blocks  # 用实际块数匹配
-            # 尝试常见值
+            n_val = num_blocks
             for candidate in [100, 200, 300]:
-                if abs(num_blocks - candidate) <= 10:  # 允许小误差
+                if abs(num_blocks - candidate) <= 10:
                     n_val = candidate
                     break
             pl_path = testcase_dir / f"n{n_val}.pl"
@@ -733,7 +775,7 @@ def main(args=None):
                 nets_data = (nets, pin_dict)
                 print(f"已加载网表数据: {len(nets)} 个网表, {len(pin_dict)} 个引脚")
             else:
-                print(f"警告: 未找到测试用例文件，跳过网表绘制")
+                print(f"警告: 未找到测试用例文件，跳过网表连线/着色")
         # -----------------------------------
         # 确定输出目录
         if args.output:
@@ -761,9 +803,12 @@ def main(args=None):
                 print(f"[绘制中 {img_done}/{img_total}] {_clean_stem(fp_path.stem)}_floorplan.png",
                       flush=True)
             fp_img = out_dir / f"{_clean_stem(fp_path.stem)}_floorplan.png"
-            draw_floorplan(blocks, chip_width, output_image=str(fp_img),
+            draw_floorplan(blocks, chip_width, chip_height=chip_height,
+                           output_image=str(fp_img),
                            show_labels=not args.no_labels, dpi=args.dpi,
-                           snap_title=snap_title)
+                           snap_title=snap_title,
+                           nets=(nets_data[0] if (nets_data and args.color_by_net) else None),
+                           color_by_net=args.color_by_net)
 
         # 绘制 B-tree（树）
         if getattr(args, 'draw_btree', True):

@@ -291,7 +291,7 @@ def parse_output(output_text: str) -> Dict[str, Optional[float]]:
     return result
 
 def run_single(exec_path: Path, hardblocks: str, nets: str, terminals: str,
-               floorplan_file: Path, ratio: float, seed: int, algo:int = 0, curve:bool = False, snapshot_step: int = 0) -> Tuple[str, Dict[str, Optional[float]], int]:
+               floorplan_file: Path, ratio: float, seed: int, algo:int = 0, curve:bool = False, snapshot_step: int = 0, aspect_ratio: float = 1.0) -> Tuple[str, Dict[str, Optional[float]], int]:
     """
     运行单次实验（无临时配置），返回 (原始输出, 提取的指标字典, 返回码)。
     等价于 run_single_with_config(config_file=None)，为保留旧调用点而保留的薄封装。
@@ -301,11 +301,13 @@ def run_single(exec_path: Path, hardblocks: str, nets: str, terminals: str,
         floorplan_file, ratio, seed,
         algo=algo, config_file=None,
         snapshot_step=snapshot_step,
+        aspect_ratio=aspect_ratio,
     )
 
 def run_single_with_config(exec_path: Path, hardblocks: str, nets: str, terminals: str,
                            floorplan_file: Path, ratio: float, seed: int,
-                           algo: int = 0, config_file: Optional[str] = None, snapshot_step: int = 0
+                           algo: int = 0, config_file: Optional[str] = None, snapshot_step: int = 0,
+                           aspect_ratio: float = 1.0
                            ) -> Tuple[str, Dict[str, Optional[float]], int]:
     """
     运行n次实验，返回 (原始输出, 提取的指标字典, 返回码)，额外支持 --config 参数传入临时 JSON 配置文件。
@@ -315,6 +317,8 @@ def run_single_with_config(exec_path: Path, hardblocks: str, nets: str, terminal
         cmd.extend(["--config", config_file])
     if snapshot_step > 0:
         cmd.extend(["--snapshot_step", str(snapshot_step)])
+    if aspect_ratio != 1.0:
+        cmd.extend(["--aspect_ratio", str(aspect_ratio)])
     cmd.extend([hardblocks, nets, terminals, str(floorplan_file), str(ratio), str(seed)])
 
     try:
@@ -327,7 +331,8 @@ def run_single_with_config(exec_path: Path, hardblocks: str, nets: str, terminal
         return error_output, {}, -1
 
 def run_with_curve_logging(exec_path, hardblocks, nets, terminals, floorplan_file,
-                           ratio, seed, curve_csv_path, log_file_path, algo=0,snapshot_step: int = 0,):
+                           ratio, seed, curve_csv_path, log_file_path, algo=0,
+                           snapshot_step: int = 0, aspect_ratio: float = 1.0,):
     """
     运行n次实验，实时过滤输出：
     - 以 'CSV:' 开头的行：去掉前缀后写入 curve_csv_path
@@ -337,6 +342,8 @@ def run_with_curve_logging(exec_path, hardblocks, nets, terminals, floorplan_fil
     cmd = [str(exec_path), "--algo", str(algo)]
     if snapshot_step > 0:
         cmd.extend(["--snapshot_step", str(snapshot_step)])
+    if aspect_ratio != 1.0:
+        cmd.extend(["--aspect_ratio", str(aspect_ratio)])
     cmd.extend([hardblocks, nets, terminals, str(floorplan_file), str(ratio), str(seed)])
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             text=True, bufsize=1)  # 行缓冲
@@ -747,6 +754,7 @@ def write_config_yaml(run_dir: Path, args: Namespace) -> None:
     content = {
         "circuit": args.circuit,
         "white_space_ratio": args.white_space_ratio,
+        "target_aspect_ratio": getattr(args, "target_aspect_ratio", 1.0),
         "algo": args.algo,
         "num_runs": args.num_runs,
         "executable": args.executable,
@@ -969,6 +977,7 @@ def run_tuning(args):
                     exec_path, hardblocks, nets, terminals,
                     floorplan_file, args.white_space_ratio, seed,
                     algo=algo, config_file=str(config_json_path),
+                    aspect_ratio=args.target_aspect_ratio,
                 )
                 # 过滤 CSV 行：曲线写入 curves/param_*/run{idx}_curve_data.csv，log 移除 CSV 行
                 curve_lines = []
@@ -992,6 +1001,7 @@ def run_tuning(args):
                     exec_path, hardblocks, nets, terminals,
                     floorplan_file, args.white_space_ratio, seed,
                     algo=algo, config_file=str(config_json_path),
+                    aspect_ratio=args.target_aspect_ratio,
                 )
                 log_output_text = output_text
 
@@ -1195,6 +1205,9 @@ def parse_args(argv=None):
     parser.add_argument("--num_runs", type=int,
                         default=_cfg_value(cfg, "num_runs", 20),
                         help="运行次数")
+    parser.add_argument("--target_aspect_ratio", type=float,
+                        default=_cfg_value(cfg, "target_aspect_ratio", 1.0),
+                        help="目标宽长比 W/H（支持 1/2/3，默认 1=正方形）")
     parser.add_argument("--output_dir", type=str, default=cfg.get("output_dir"),
                         help="floorplan 输出目录（自动生成前缀）")
     parser.add_argument("--log_file", type=str, default=cfg.get("log_file"),
@@ -1222,12 +1235,18 @@ def parse_args(argv=None):
     parser.add_argument("--draw_fp", action=argparse.BooleanOptionalAction,
                         default=_cfg_value(cfg, "draw_fp", False),
                         help="批量实验完成后自动绘制 floorplan（外框）图（调用 scripts/draw_fixed_outline.py）")
+    parser.add_argument("--draw_init_floorplan", action=argparse.BooleanOptionalAction,
+                        default=_cfg_value(cfg, "draw_init_floorplan", False),
+                        help="绘制并保存初始布局（初始化树后的布局）到 figures/init_floorplan/")
     parser.add_argument("--draw_btree", action=argparse.BooleanOptionalAction,
                         default=_cfg_value(cfg, "draw_btree", False),
                         help="批量实验完成后自动绘制 B*-tree（树）图（调用 scripts/draw_fixed_outline.py）")
     parser.add_argument("--draw_curve", action=argparse.BooleanOptionalAction,
                         default=_cfg_value(cfg, "draw_curve", False),
                         help="曲线记录完成后自动绘制模拟退火曲线（调用 scripts/draw_curve.py，需 --record_curve）")
+    parser.add_argument("--color_by_net", action=argparse.BooleanOptionalAction,
+                        default=_cfg_value(cfg, "color_by_net", False),
+                        help="按网表给模块着色：同一网表内模块同色，不同网表不同色")
     # ---- 补绘制模式 ----
     parser.add_argument("--redraw", action=argparse.BooleanOptionalAction,
                         default=_cfg_value(cfg, "redraw", False),
@@ -1327,7 +1346,7 @@ def main():
     compile_and_check(exec_path, script_dir, args.skip_make,
                       curve_mode=(args.record_curve or args.draw_curve),
                       debug_log=args.debug_log,
-                      snapshot=args.snapshot,
+                      snapshot=(args.snapshot or args.draw_init_floorplan),
                       log_dir=run_dir)
 
     # num_runs is capped in 10 in record_curve mode
@@ -1353,6 +1372,14 @@ def main():
 
     print(f"开始批量测试，日志保存到 {log_file}")
 
+    # 快照步长：snapshot 开启→用用户值；仅 draw_init_floorplan→用极大值只保存初始布局(iter=1)
+    if args.snapshot:
+        snap_step = args.snapshot_step
+    elif args.draw_init_floorplan:
+        snap_step = 10000000000   # 几乎不触发迭代快照，只保留初始布局
+    else:
+        snap_step = 0
+
     # 批量运行（原逻辑）
     if args.record_curve:
         # 曲线模式：可运行多次，使用特殊处理函数
@@ -1370,7 +1397,8 @@ def main():
                 exec_path, hardblocks, nets, terminals,
                 floorplan_file, args.white_space_ratio, 
                 seed, curve_csv_path, log_file, algo=args.algo,
-                snapshot_step=(args.snapshot_step if args.snapshot else 0),)
+                snapshot_step=snap_step,
+                aspect_ratio=args.target_aspect_ratio,)
             # 仍然可以收集最终指标到 table_data，以便统计（可选）
             # 提取指标存入表格
             row = _make_metric_row(run_idx, seed, metrics)
@@ -1401,7 +1429,8 @@ def main():
                 exec_path, hardblocks, nets, terminals,
                 floorplan_file, args.white_space_ratio, 
                 seed, algo=args.algo,   # 批量模式下不输出曲线
-                snapshot_step=(args.snapshot_step if args.snapshot else 0),
+                snapshot_step=snap_step,
+                aspect_ratio=args.target_aspect_ratio,
             )
 
             # 记录原始输出到日志
@@ -1452,6 +1481,7 @@ def main():
             tune=None,
             draw_fp=True,
             draw_btree=False,
+            color_by_net=args.color_by_net,
         )
         draw_mod.main(fp_args)
 
@@ -1521,6 +1551,7 @@ def main():
                 img_done=img_done,
                 img_total=total_img,
                 snap_idx=snap_idx,        # ← 新增：第几张
+                color_by_net=args.color_by_net,
             )
             draw_mod.main(snap_args)
             # 本文件实际画了几张图，就往后推进计数
@@ -1528,7 +1559,43 @@ def main():
                 img_done += 1
             if args.draw_btree and bt.exists():
                 img_done += 1
-            
+
+    # ---- 自动绘制初始布局（figures/init_floorplan/）----
+    if args.draw_init_floorplan:
+        draw_mod = _load_scripts_module("draw_fixed_outline")
+        init_fig_dir = figure_dir / "init_floorplan"
+        init_fig_dir.mkdir(parents=True, exist_ok=True)
+        init_files = sorted((output_dir / "snapshots").glob("*_iter1.floorplan"))
+        # 每个初始快照同时绘制 floorplan 与 B*-tree 两张图
+        n_per_img = 2
+        init_total = len(init_files) * n_per_img
+        if init_files:
+            print(f"初始布局文件: {len(init_files)} 个（每个绘制 floorplan + B*-tree）")
+        else:
+            print("警告: 未找到初始布局文件（*_iter1.floorplan），请确认已编译 SNAPSHOT_MODE=1")
+        img_done = 0
+        for i, fp in enumerate(init_files, start=1):
+            bt = fp.with_suffix(".Btree")
+            init_args = Namespace(
+                floorplan=str(fp),
+                btree=str(bt) if bt.exists() else None,
+                output=str(init_fig_dir),
+                dpi=args.fp_dpi,
+                no_labels=False,
+                draw_fp=True,
+                draw_btree=True,          # ← 同时绘制初始 B*-tree
+                draw_nets=args.draw_nets,
+                max_nets_draw=args.max_nets_draw,
+                tune=None,
+                img_done=img_done,
+                img_total=init_total,
+                snap_idx=i,
+                color_by_net=args.color_by_net,
+            )
+            draw_mod.main(init_args)
+            img_done += n_per_img   # floorplan + btree 各一张
+        print(f"初始布局图已保存至: {init_fig_dir}")
+
     # ---- 快照播放（合成动画 GIF）----
     if args.play_snapshots:
         snap_fig_dir = figure_dir / "snapshots"
