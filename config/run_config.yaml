@@ -9,7 +9,7 @@
 circuit: n50 # 使用的电路: n10/n30/n50/n100/n200/n300
 white_space_ratio: 0.1 # 空白率
 target_aspect_ratio: 1 # 目标宽长比 W/H（支持 1/2/3，1=正方形）
-num_runs: 1 # 运行次数
+num_runs: 5 # 运行次数
 algo: 2 # 算法模式: 0=原始算法, 1=FastSA, 2=SawToothFastSA
 
 # ---- 重要实验标记 ----

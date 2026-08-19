@@ -658,8 +658,8 @@ Cost CalculateCost()
     // area of current floorplan
     double floorplan_area = width * height; // 计算当前 floorplan 的面积。这里用的是外包矩形面积，不是所有块真实面积之和。
     // aspect ratio of current floorplan
-    // double R = (double)height / width; // 原始的：计算当前版图的长宽比，这里会导致不对称输出，故要更正
-    double R = (double)min(height, width) / max(height, width); // 更新后的R计算方式
+    double R = (double)width / height; // 原始的：计算当前版图的宽高比，这里会导致不对称输出，故要更正
+    // double R = (double)min(height, width) / max(height, width); // 更新后的R计算方式
 
     // half perimeter wire length   半周长线长
     auto _pt1 = std::chrono::steady_clock::now();
@@ -728,9 +728,10 @@ Cost CalculateCost()
 
     double area_cost = c.area / area_norm;   // 计算面积代价。如果当前面积和初始面积一样，这项就是 1；如果更大，就大于 1
     double wl_cost = c.wirelength / wl_norm; // 计算线长代价，和面积代价一样，也是相对初始值的比例
-    // 长宽比惩罚：与目标宽长比 W/H 对应（布局宽高比正好匹配目标时为 0，比率偏差越大惩罚越大）
-    double R_target = 1 / g_target_aspect_ratio; // 目标宽高比 W/H
-    double R_cost = fabs(R_target - R);          // 计算长宽比惩罚。这里希望 R 尽量接近 1，也就是版图尽量接近正方形；偏离 1 越多，惩罚越大
+                                             // 长宽比惩罚：与目标宽长比 W/H 对应（布局宽高比正好匹配目标时为 0，比率偏差越大惩罚越大）
+    //  double R_target = 1 / g_target_aspect_ratio; // 目标宽高比 W/H
+    //  double R_cost = fabs(R_target - R);          // 计算长宽比惩罚。这里希望 R 尽量接近 1，也就是版图尽量接近正方形；偏离 1 越多，惩罚越大
+    double R_cost = fabs(g_target_aspect_ratio - R); // 计算长宽比惩罚。这里希望 R 尽量接近 1，也就是版图尽量接近正方形；偏离 1 越多，惩罚越大
     // double R_cost = (1.0 - R) / ar_norm;     // 计算长宽比惩罚。这里希望 R 尽量接近 1，也就是版图尽量接近正方形；偏离 1 越多，惩罚越大
 
     // 全局面积违规 A'（目标外框为矩形 W×H，宽长比 W/H = g_target_aspect_ratio）
